@@ -1,10 +1,9 @@
-import json
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import ZZZ_DATA_PATH
+from config import ZZZ_DATA_CSV_PATH
+from utils.sheet_parser import parse_setting_csv
 
 MAX_FIELD_LEN = 1000  # 디스코드 embed 필드 길이 제한 방지용
 
@@ -16,11 +15,8 @@ class ZZZData(commands.Cog):
         self.reload_data()
 
     def reload_data(self):
-        try:
-            with open(ZZZ_DATA_PATH, encoding="utf-8") as f:
-                self.data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.data = {}
+        characters = parse_setting_csv(ZZZ_DATA_CSV_PATH)
+        self.data = {"캐릭터": characters} if characters else {}
 
     def _all_categories(self):
         return list(self.data.keys())
@@ -29,7 +25,6 @@ class ZZZData(commands.Cog):
         return self.data.get(category, [])
 
     def _entry_name(self, entry: dict):
-        # '이름' 필드를 우선 사용하고, 없으면 첫 번째 필드를 이름처럼 사용
         for key in ("이름", "name", "Name"):
             if key in entry:
                 return str(entry[key])
@@ -52,7 +47,10 @@ class ZZZData(commands.Cog):
     @app_commands.command(name="데이터목록", description="봇에 등록된 시트 데이터 분류와 개수를 봅니다.")
     async def data_list(self, interaction: discord.Interaction):
         if not self.data:
-            await interaction.response.send_message("등록된 데이터가 없어요. 시트 데이터를 먼저 넣어주세요.", ephemeral=True)
+            await interaction.response.send_message(
+                "등록된 데이터가 없어요. data/zzz_data.csv 파일을 넣고 /데이터새로고침 해주세요.",
+                ephemeral=True,
+            )
             return
         lines = "\n".join(f"- **{cat}**: {len(entries)}개" for cat, entries in self.data.items())
         await interaction.response.send_message(f"**등록된 데이터 분류**\n{lines}")
@@ -63,7 +61,6 @@ class ZZZData(commands.Cog):
         entries = self._entries(분류)
         match = next((e for e in entries if self._entry_name(e) == 이름), None)
         if not match:
-            # 정확히 일치하지 않으면 포함 검색으로 한번 더 시도
             match = next((e for e in entries if 이름.lower() in self._entry_name(e).lower()), None)
         if not match:
             await interaction.response.send_message(f"`{분류}` 분류에서 `{이름}`을(를) 찾지 못했어요.", ephemeral=True)
@@ -103,11 +100,12 @@ class ZZZData(commands.Cog):
         more = f"\n...외 {len(results) - 25}건" if len(results) > 25 else ""
         await interaction.response.send_message(f"**'{키워드}' 검색 결과**\n{lines}{more}")
 
-    @app_commands.command(name="데이터새로고침", description="(관리자) data/zzz_data.json 파일을 다시 불러옵니다.")
+    @app_commands.command(name="데이터새로고침", description="(관리자) data/zzz_data.csv 파일을 다시 불러옵니다.")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def data_reload(self, interaction: discord.Interaction):
         self.reload_data()
-        await interaction.response.send_message("🔄 데이터를 다시 불러왔어요.", ephemeral=True)
+        total = sum(len(v) for v in self.data.values())
+        await interaction.response.send_message(f"🔄 CSV를 다시 불러왔어요. (총 {total}개 항목)", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
