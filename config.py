@@ -24,4 +24,4 @@ YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY") or None
 CHECK_INTERVAL_SECONDS = int(os.getenv("CHECK_INTERVAL_SECONDS", "300"))
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "zzz_bot.db")
-ZZZ_DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "zzz_data.json")
+ZZZ_DATA_CSV_PATH = os.path.join(os.path.dirname(__file__), "data", "zzz_data.csv")
