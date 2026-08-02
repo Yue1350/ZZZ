@@ -5,6 +5,12 @@ from discord.ext import commands
 import pandas as pd
 import requests
 import urllib.parse
+from keep_alive import keep_alive
+
+load_dotenv()
+
+keep_alive()
+
 
 # ---------------------------------------------------------
 # 1. 나무위키 이미지 자동 검색 함수
