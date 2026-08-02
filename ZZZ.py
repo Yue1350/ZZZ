@@ -7,7 +7,7 @@ from discord.ext import commands
 import pandas as pd
 from keep_alive import keep_alive
 
-# 환경 변수 및 서브 서버 유지
+# 환경 변수 및 서버 유지
 load_dotenv()
 keep_alive()
 
@@ -62,7 +62,7 @@ def load_data():
     return df
 
 # ---------------------------------------------------------
-# 2. 임베드 생성 함수 (가독성 최적화 & URL 인코딩 예외 처리)
+# 2. 임베드 생성 함수 (가독성 컴팩트 배치 & 스킬 레벨 필드화)
 # ---------------------------------------------------------
 def create_setting_embed(row):
     def get_val(col_name):
@@ -100,24 +100,31 @@ def create_setting_embed(row):
     except Exception:
         pass
 
-    # 위에서 아래 순서대로 세로 배치 & 전체 코드 박스(```) 포맷
-    embed.add_field(name="🏛️ 진영", value=f"```{faction}```", inline=False)
-    embed.add_field(name="⚡ 특성", value=f"```{trait}```", inline=False)
-    embed.add_field(name="🎯 포지션", value=f"```{position}```", inline=False)
-    embed.add_field(name="🗡️ W-엔진", value=f"```{w_engine}```", inline=False)
-    embed.add_field(name="💿 4세트", value=f"```{set_4}```", inline=False)
-    embed.add_field(name="💿 2세트", value=f"```{set_2}```", inline=False)
-    embed.add_field(name="📊 디스크 주옵션", value=f"```{disc_main_text}```", inline=False)
-    embed.add_field(name="🔍 유효 부옵션", value=f"```{sub_stats}```", inline=False)
-    embed.add_field(name="🔓 핵심 돌파", value=f"```{breakthrough}```", inline=False)
-    embed.add_field(name="📈 주옵 (목표 스탯)", value=f"```{main_stat}```", inline=False)
-    embed.add_field(name="💥 치명타", value=f"```{crit_stat}```", inline=False)
+    # [1] 기본 정보 (3열 가로 배치)
+    embed.add_field(name="🏛️ 진영", value=f"```{faction}```", inline=True)
+    embed.add_field(name="⚡ 특성", value=f"```{trait}```", inline=True)
+    embed.add_field(name="🎯 포지션", value=f"```{position}```", inline=True)
 
+    # [2] 스킬 및 장비 (긴 텍스트는 한 줄 전체 사용)
+    embed.add_field(name="🔝 스킬 레벨 우선순위 (평,회,지,특,궁)", value=f"```{skill_lvl}```", inline=False)
+    embed.add_field(name="🗡️ W-엔진", value=f"```{w_engine}```", inline=False)
+    
+    # [3] 디스크 세트 (2열 배치)
+    embed.add_field(name="💿 4세트", value=f"```{set_4}```", inline=True)
+    embed.add_field(name="💿 2세트", value=f"```{set_2}```", inline=True)
+
+    # [4] 디스크 옵션 (한 줄 전체)
+    embed.add_field(name="📊 디스크 주옵션 (4/5/6번)", value=f"```{disc_main_text}```", inline=False)
+    embed.add_field(name="🔍 유효 부옵션", value=f"```{sub_stats}```", inline=False)
+
+    # [5] 스탯 및 돌파 정보 (3열 가로 배치)
+    embed.add_field(name="🔓 핵심 돌파", value=f"```{breakthrough}```", inline=True)
+    embed.add_field(name="📈 주옵 스탯", value=f"```{main_stat}```", inline=True)
+    embed.add_field(name="💥 치명타", value=f"```{crit_stat}```", inline=True)
+
+    # [6] 기타 / 계산법 (있을 때만 하단에 배치)
     if etc != "-":
         embed.add_field(name="📝 기타 / 계산법", value=f"```{etc}```", inline=False)
-
-    if skill_lvl != "-":
-        embed.set_footer(text=f"스킬 레벨 우선순위 (평,회,지,특,궁): {skill_lvl}")
 
     return c_name, embed
 
