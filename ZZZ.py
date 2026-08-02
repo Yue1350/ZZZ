@@ -1,42 +1,28 @@
 import os
+import urllib.parse
 from dotenv import load_dotenv
 import discord
 from discord import app_commands
 from discord.ext import commands
 import pandas as pd
 import requests
-import urllib.parse
 from keep_alive import keep_alive
 
+# 환경 변수 로드 및 서버 유지 실행
 load_dotenv()
-
 keep_alive()
 
-
 # ---------------------------------------------------------
-# 1. 나무위키 이미지 자동 검색 함수
+# 1. 나무위키/웹 이미지 검색 함수 (차단 방지용)
 # ---------------------------------------------------------
 def get_namu_image(char_name: str):
     try:
-        # 'S. 빌리' -> '빌리 Kid' 같이 특수문자 정제
         clean_name = char_name.replace("S.", "").strip()
-        
-        # 나무위키 젠존제 캐릭터 프로필 이미지 오픈 API / 미러 활용 패턴
-        # 가장 안정적으로 이미지를 불러오기 위해 나무위키/유저위키 이미지 서버 CDN 활용
         encoded_name = urllib.parse.quote(f"젠레스 존 제로 {clean_name}")
-        
-        # DuckDuckGo 이미지 검색 API를 이용해 나무위키 이미지 가져오기
         headers = {'User-Agent': 'Mozilla/5.0'}
         search_url = f"https://html.duckduckgo.com/html/?q={encoded_name}+site:namu.wiki"
         res = requests.get(search_url, headers=headers, timeout=3)
-        
-        # 만약 직접 검색이 막히면 젠존제 공식 미디어 썸네일 규칙 기반 URL 사용
-        # (기본 예시: 나무위키 젠존제 캐릭터 항목의 파일명 규칙)
-        wiki_file_url = f"https://namu.wiki/w/파일:ZZZ_{clean_name}_Profile.png"
-        
-        # 디스코드 임베드는 redirect URL이나 나무위키 CDNDirect URL을 좋아해서
-        # 안전하게 젠존제 나무위키 프로필 표준 렌더링 주소를 전달해!
-        return f"https://raw.githubusercontent.com/site-images/zzz/{clean_name}.png" 
+        return f"https://raw.githubusercontent.com/site-images/zzz/{clean_name}.png"
     except:
         return None
 
@@ -75,12 +61,11 @@ class CharacterSelect(discord.ui.Select):
             placeholder="캐릭터를 선택해줘!",
             min_values=1,
             max_values=1,
-            options=options[:25]
+            options=options[:25]  # 디스코드 제한: 최대 25개
         )
         self.characters_df = characters_df
 
     async def callback(self, interaction: discord.Interaction):
-        # 작업 시간이 조금 걸릴 수 있으므로 미리 수신 대기 처리
         await interaction.response.defer()
 
         selected_char = self.values[0]
@@ -110,22 +95,15 @@ class CharacterSelect(discord.ui.Select):
         disc_mains = [get_val(c) for c in disc_main_cols if get_val(c) != "-"]
         disc_main_text = " / ".join(disc_mains) if disc_mains else "-"
 
-        # 임베드 작성
+        # 임베드 생성
         embed = discord.Embed(
             title=f"🎮 {c_name} ({faction}) 세팅 가이드",
             description=f"**특성:** {trait} | **포지션:** {position}\n**핵심 돌파:** {breakthrough}",
             color=0x00FF7F
         )
 
-        # 💡 나무위키/웹 이미지 자동 파싱 적용!
-        # 나무위키 차단을 피하기 위해 젠존제 공식 호요버스 CDN 규칙을 조합하거나 
-        # 캐릭터 이름 기반으로 자동 검색된 이미지를 넣어줘!
+        # 썸네일 이미지 링크 세팅
         clean_char = c_name.replace("S.", "").strip()
-        
-        # 디스코드 임베드에 엑스박스 안 뜨고 제일 잘 나오는 호요버스/위키 공식 썸네일 규격
-        img_url = f"https://snag.gy/example_{clean_char}.jpg" # 혹은 구글/나무위키 자동 렌더 주소
-        
-        # 썸네일 설정
         embed.set_thumbnail(url=f"https://act-webstatic.hoyoverse.com/game_record/zzz/role_square_avatar/{clean_char}.png")
 
         embed.add_field(name="🗡️ 추천 W-엔진", value=f"```{w_engine}```", inline=False)
@@ -146,7 +124,6 @@ class CharacterSelect(discord.ui.Select):
         if skill_lvl != "-":
             embed.set_footer(text=f"스킬 레벨 우선순위: {skill_lvl}")
 
-        # 메시지 수정
         await interaction.followup.send(content=f"**{c_name}** 세팅 정보를 가져왔어!", embed=embed)
 
 # ---------------------------------------------------------
@@ -191,7 +168,7 @@ class CategoryView(discord.ui.View):
         self.add_item(CategorySelect(df))
 
 # ---------------------------------------------------------
-# 5. 봇 실행
+# 5. 봇 및 슬래시 명령어 설정
 # ---------------------------------------------------------
 class MyBot(commands.Bot):
     def __init__(self):
@@ -212,4 +189,12 @@ async def setting_slash(interaction: discord.Interaction):
     except Exception as e:
         await interaction.response.send_message(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
 
-bot.run("YOUR_DISCORD_BOT_TOKEN")
+# ---------------------------------------------------------
+# 6. 토큰 로드 및 실행
+# ---------------------------------------------------------
+token = os.getenv("DISCORD_TOKEN")
+
+if not token:
+    raise ValueError("⚠️ DISCORD_TOKEN 환경 변수가 설정되지 않았어! Render 대시보드를 확인해줘.")
+
+bot.run(token)
