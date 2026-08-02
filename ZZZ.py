@@ -7,12 +7,12 @@ from discord.ext import commands
 import pandas as pd
 from keep_alive import keep_alive
 
-# 환경 변수 및 서버 유지
+# 환경 변수 및 서브 서버 유지
 load_dotenv()
 keep_alive()
 
 # ---------------------------------------------------------
-# 1. zzz_data.csv 전용 데이터 로드 함수
+# 1. zzz_data.csv 데이터 로드 함수 (3행 1세트 데이터 보정)
 # ---------------------------------------------------------
 def load_data():
     csv_file = "zzz_data.csv"
@@ -25,10 +25,10 @@ def load_data():
         except UnicodeDecodeError:
             df = pd.read_csv(csv_file, encoding="cp949", header=1)
 
-    # 헤더명 공백 및 줄바꿈 정리
+    # 컬럼명 공백 및 줄바꿈 제거
     df.columns = [str(col).replace("\n", "").replace(" ", "").strip() for col in df.columns]
 
-    # 3행 1세트 데이터 묶어주기
+    # 3행 1세트 데이터 채우기 (캐릭명/진영은 아래에서 위로)
     if "캐릭명" in df.columns:
         df["캐릭명"] = df["캐릭명"].bfill()
 
@@ -62,7 +62,7 @@ def load_data():
     return df
 
 # ---------------------------------------------------------
-# 2. 임베드 생성 함수 (썸네일 URL 안전 처리 및 세로 박스 배치)
+# 2. 임베드 생성 함수 (가독성 최적화 & URL 인코딩 예외 처리)
 # ---------------------------------------------------------
 def create_setting_embed(row):
     def get_val(col_name):
@@ -91,7 +91,7 @@ def create_setting_embed(row):
         color=0x2B2D31
     )
 
-    # 💡 썸네일 URL 인코딩 및 예외 처리
+    # 썸네일 URL 인코딩 및 안전 처리
     try:
         clean_char = c_name.replace("S.", "").strip()
         encoded_char = urllib.parse.quote(clean_char)
@@ -100,7 +100,7 @@ def create_setting_embed(row):
     except Exception:
         pass
 
-    # 위에서 아래로 단일 열 세로 배치 & 값 전체 코드 블록(```) 처리
+    # 위에서 아래 순서대로 세로 배치 & 전체 코드 박스(```) 포맷
     embed.add_field(name="🏛️ 진영", value=f"```{faction}```", inline=False)
     embed.add_field(name="⚡ 특성", value=f"```{trait}```", inline=False)
     embed.add_field(name="🎯 포지션", value=f"```{position}```", inline=False)
@@ -114,4 +114,154 @@ def create_setting_embed(row):
     embed.add_field(name="💥 치명타", value=f"```{crit_stat}```", inline=False)
 
     if etc != "-":
-        embed.add_field(name="📝 기타 / 계산법", value=f"```{etc}
+        embed.add_field(name="📝 기타 / 계산법", value=f"```{etc}```", inline=False)
+
+    if skill_lvl != "-":
+        embed.set_footer(text=f"스킬 레벨 우선순위 (평,회,지,특,궁): {skill_lvl}")
+
+    return c_name, embed
+
+# ---------------------------------------------------------
+# 3. 드롭다운 뷰 클래스
+# ---------------------------------------------------------
+class CharacterSelect(discord.ui.Select):
+    def __init__(self, characters_df):
+        options = []
+        unique_chars = characters_df.drop_duplicates(subset=["캐릭명"])
+        for _, row in unique_chars.iterrows():
+            c_name = str(row["캐릭명"]).strip()
+            faction = str(row["진영"]).replace("\n", " ").strip() if pd.notna(row["진영"]) else ""
+            options.append(
+                discord.SelectOption(
+                    label=c_name,
+                    description=f"{faction}" if faction else "세팅 정보 보기",
+                    value=c_name
+                )
+            )
+        
+        super().__init__(
+            placeholder="캐릭터를 선택해줘!",
+            min_values=1,
+            max_values=1,
+            options=options[:25]
+        )
+        self.characters_df = characters_df
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        selected_char = self.values[0]
+        row = self.characters_df[self.characters_df["캐릭명"] == selected_char].iloc[0]
+
+        c_name, embed = create_setting_embed(row)
+        await interaction.followup.send(content=f"**{c_name}** 세팅 정보를 가져왔어!", embed=embed)
+
+class CategorySelect(discord.ui.Select):
+    def __init__(self, df):
+        self.df = df
+        options = [
+            discord.SelectOption(label="강공", description="강공 포지션 캐릭터", emoji="⚔️"),
+            discord.SelectOption(label="격파", description="격파 포지션 캐릭터", emoji="💥"),
+            discord.SelectOption(label="이상", description="이상 포지션 캐릭터", emoji="🌀"),
+            discord.SelectOption(label="지원", description="지원 포지션 캐릭터", emoji="🪄"),
+            discord.SelectOption(label="방어", description="방어 포지션 캐릭터", emoji="🛡️"),
+            discord.SelectOption(label="명파", description="명파 포지션 캐릭터", emoji="✨"),
+        ]
+        super().__init__(placeholder="카테고리를 고르고 세팅을 확인해봐!", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        selected_category = self.values[0]
+        
+        filtered_df = self.df[
+            (self.df["포지션"].astype(str).str.contains(selected_category, na=False)) |
+            (self.df["특성"].astype(str).str.contains(selected_category, na=False))
+        ]
+
+        if filtered_df.empty:
+            await interaction.response.send_message(f"❌ **{selected_category}** 카테고리에 속한 캐릭터 데이터가 없어!", ephemeral=True)
+            return
+
+        char_view = discord.ui.View()
+        char_view.add_item(CharacterSelect(filtered_df))
+        
+        await interaction.response.edit_message(
+            content=f"📌 **{selected_category}** 카테고리를 선택했어! 세팅을 볼 캐릭터를 골라줘.",
+            view=char_view
+        )
+
+class CategoryView(discord.ui.View):
+    def __init__(self, df):
+        super().__init__()
+        self.add_item(CategorySelect(df))
+
+# ---------------------------------------------------------
+# 4. 봇 및 슬래시/일반 명령어 설정
+# ---------------------------------------------------------
+class MyBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        super().__init__(command_prefix="!", intents=intents)
+
+    async def setup_hook(self):
+        await self.tree.sync()
+
+bot = MyBot()
+
+# 슬래시 명령어 (/세팅 [캐릭터])
+@bot.tree.command(name="세팅", description="젠존제 캐릭터 세팅 정보를 검색해!")
+@app_commands.describe(캐릭터="검색할 캐릭터 이름을 입력해줘 (선택 사항)")
+async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None):
+    try:
+        df = load_data()
+
+        if 캐릭터:
+            search_name = 캐릭터.replace(" ", "").lower()
+            matched = df[df["캐릭명"].astype(str).str.replace(" ", "").str.lower().str.contains(search_name, na=False)]
+
+            if matched.empty:
+                await interaction.response.send_message(f"❌ **{캐릭터}** 캐릭터 정보를 찾을 수 없어!", ephemeral=True)
+                return
+
+            row = matched.iloc[0]
+            c_name, embed = create_setting_embed(row)
+            await interaction.response.send_message(content=f"**{c_name}** 세팅 정보를 가져왔어!", embed=embed)
+        else:
+            view = CategoryView(df)
+            await interaction.response.send_message("원하는 카테고리를 아래 드롭다운에서 골라줘!", view=view, ephemeral=True)
+
+    except Exception as e:
+        await interaction.response.send_message(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
+
+# 일반 명령어 (!세팅 [캐릭터])
+@bot.command(name="세팅")
+async def setting_prefix(ctx, *, 캐릭터: str = None):
+    try:
+        df = load_data()
+
+        if 캐릭터:
+            search_name = 캐릭터.replace(" ", "").lower()
+            matched = df[df["캐릭명"].astype(str).str.replace(" ", "").str.lower().str.contains(search_name, na=False)]
+
+            if matched.empty:
+                await ctx.send(f"❌ **{캐릭터}** 캐릭터 정보를 찾을 수 없어!")
+                return
+
+            row = matched.iloc[0]
+            c_name, embed = create_setting_embed(row)
+            await ctx.send(content=f"**{c_name}** 세팅 정보를 가져왔어!", embed=embed)
+        else:
+            view = CategoryView(df)
+            await ctx.send("원하는 카테고리를 아래 드롭다운에서 골라줘!", view=view)
+
+    except Exception as e:
+        await ctx.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}")
+
+# ---------------------------------------------------------
+# 5. 토큰 로드 및 봇 실행
+# ---------------------------------------------------------
+token = os.getenv("DISCORD_TOKEN")
+
+if not token:
+    raise ValueError("⚠️ DISCORD_TOKEN 환경 변수가 설정되지 않았어!")
+
+bot.run(token)
