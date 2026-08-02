@@ -7,17 +7,16 @@ from discord.ext import commands
 import pandas as pd
 from keep_alive import keep_alive
 
-# 환경 변수 및 서브 서버 유지
+# 환경 변수 및 서버 유지
 load_dotenv()
 keep_alive()
 
 # ---------------------------------------------------------
-# 1. zzz_data.csv 전용 데이터 로드 함수 (3행 1세트 완전 매칭)
+# 1. zzz_data.csv 전용 데이터 로드 함수
 # ---------------------------------------------------------
 def load_data():
     csv_file = "zzz_data.csv"
     
-    # 인코딩 예외 처리 (utf-8-sig -> utf-8 -> cp949)
     try:
         df = pd.read_csv(csv_file, encoding="utf-8-sig", header=1)
     except UnicodeDecodeError:
@@ -26,31 +25,26 @@ def load_data():
         except UnicodeDecodeError:
             df = pd.read_csv(csv_file, encoding="cp949", header=1)
 
-    # 1) 헤더명 공백 및 줄바꿈 정리
+    # 헤더명 공백 및 줄바꿈 정리
     df.columns = [str(col).replace("\n", "").replace(" ", "").strip() for col in df.columns]
 
-    # 2) 3행으로 나뉜 데이터 묶어주기
-    # 캐릭명은 3번째 행(아래)에 위치하므로 아래에서 위로 채우기 (bfill)
+    # 3행 1세트 데이터 묶어주기
     if "캐릭명" in df.columns:
         df["캐릭명"] = df["캐릭명"].bfill()
 
-    # 진영은 2번째 행(가운데)에 위치
     if "진영" in df.columns:
         df["진영"] = df["진영"].bfill().ffill()
 
-    # 상단 1번째 행에 있는 특성, 포지션, 스킬 레벨 등 세팅 정보 위에서 아래로 채우기 (ffill)
     fill_targets = ["특성", "포지션", "W-엔진", "4세트", "2세트", "디스크주옵션", "유효부옵션", "핵심돌파", "주옵", "치명타", "기타"]
     for target in fill_targets:
         if target in df.columns:
             df[target] = df[target].ffill()
 
-    # 3) '스킬 레벨' 컬럼명 매칭 정규화
     skill_col = [c for c in df.columns if "스킬" in c]
     if skill_col:
         df.rename(columns={skill_col[0]: "스킬레벨"}, inplace=True)
 
-    # 4) 디스크 주옵션 3개 컬럼(4/5/6번) 병합 처리
-    # Unnamed: 9, Unnamed: 10 컬럼에 있는 5번, 6번 주옵션 합치기
+    # 디스크 4, 5, 6번 주옵션 통합
     unnamed_cols = [c for c in df.columns if "Unnamed" in c]
     for idx, row in df.iterrows():
         mains = []
@@ -61,7 +55,6 @@ def load_data():
                 mains.append(str(row[u_col]).replace("\n", " ").strip())
         df.at[idx, "통합디스크주옵션"] = " / ".join(mains) if mains else "-"
 
-    # 진영, 포지션, W-엔진 등 내부 줄바꿈(\n)을 띄어쓰기 또는 줄바꿈으로 깔끔하게 포맷팅
     for col in df.columns:
         if df[col].dtype == 'object':
             df[col] = df[col].astype(str).str.strip()
@@ -69,7 +62,7 @@ def load_data():
     return df
 
 # ---------------------------------------------------------
-# 2. 임베드 생성 함수 (잘림 방지 뷰)
+# 2. 임베드 생성 함수 (순서대로 세로 배치 & 전체 코드 박스 적용)
 # ---------------------------------------------------------
 def create_setting_embed(row):
     def get_val(col_name):
@@ -81,7 +74,6 @@ def create_setting_embed(row):
     c_name = get_val("캐릭명")
     faction = get_val("진영").replace("\n", " ")
     trait = get_val("특성")
-    skill_lvl = get_val("스킬레벨")
     position = get_val("포지션").replace("\n", " ")
     w_engine = get_val("W-엔진")
     set_4 = get_val("4세트")
@@ -92,39 +84,35 @@ def create_setting_embed(row):
     main_stat = get_val("주옵")
     crit_stat = get_val("치명타")
     etc = get_val("기타")
+    skill_lvl = get_val("스킬레벨")
 
     embed = discord.Embed(
         title=f"🎮 {c_name} 세팅 가이드",
-        color=0x00FF7F
+        color=0x2B2D31
     )
 
     clean_char = c_name.replace("S.", "").strip()
-    embed.set_thumbnail(url=f"https://act-webstatic.hoyoverse.com/game_record/zzz/role_square_avatar/{clean_char}.png")
+    embed.set_thumbnail(url=f"[https://act-webstatic.hoyoverse.com/game_record/zzz/role_square_avatar/](https://act-webstatic.hoyoverse.com/game_record/zzz/role_square_avatar/){clean_char}.png")
 
-    # 기본 속성
-    embed.add_field(name="🏛️ 진영", value=faction, inline=True)
-    embed.add_field(name="⚡ 특성", value=trait, inline=True)
-    embed.add_field(name="🎯 포지션", value=position, inline=True)
+    # 헤더 순서대로 위에서 아래로 세로 배치 (inline=False) & 모든 값 코드박스(```) 적용
 
-    # 추천 장비
-    embed.add_field(name="🗡️ 추천 W-엔진", value=f"```{w_engine}```", inline=False)
-    embed.add_field(name="💿 추천 디스크 세트", value=f"```4세트: {set_4}\n2세트:\n{set_2}```", inline=False)
+    embed.add_field(name="🏛️ 진영", value=f"```{faction}```", inline=False)
+    embed.add_field(name="⚡ 특성", value=f"```{trait}```", inline=False)
+    embed.add_field(name="🎯 포지션", value=f"```{position}```", inline=False)
+    embed.add_field(name="🗡️ W-엔진", value=f"```{w_engine}```", inline=False)
+    embed.add_field(name="💿 4세트", value=f"```{set_4}```", inline=False)
+    embed.add_field(name="💿 2세트", value=f"```{set_2}```", inline=False)
+    embed.add_field(name="📊 디스크 주옵션", value=f"```{disc_main_text}```", inline=False)
+    embed.add_field(name="🔍 유효 부옵션", value=f"```{sub_stats}```", inline=False)
+    embed.add_field(name="🔓 핵심 돌파", value=f"```{breakthrough}```", inline=False)
+    embed.add_field(name="📈 주옵 (목표 스탯)", value=f"```{main_stat}```", inline=False)
+    embed.add_field(name="💥 치명타", value=f"```{crit_stat}```", inline=False)
 
-    # 디스크 옵션
-    embed.add_field(name="📊 디스크 주옵션 (4/5/6번)", value=f"```{disc_main_text}```", inline=True)
-    embed.add_field(name="🔍 유효 부옵션", value=f"```{sub_stats}```", inline=True)
-
-    # 목표 스탯 및 돌파
-    embed.add_field(name="🔓 핵심 돌파", value=f"```{breakthrough}```", inline=True)
-    embed.add_field(name="📈 목표 주옵", value=f"```{main_stat}```", inline=True)
-    embed.add_field(name="💥 치명타 스탯", value=f"```{crit_stat}```", inline=True)
-
-    # 참고 및 기타 계산법
     if etc != "-":
         embed.add_field(name="📝 기타 / 계산법", value=f"```{etc}```", inline=False)
 
     if skill_lvl != "-":
-        embed.set_footer(text=f"스킬 레벨 우선순위: {skill_lvl}")
+        embed.set_footer(text=f"스킬 레벨 우선순위 (평,회,지,특,궁): {skill_lvl}")
 
     return c_name, embed
 
