@@ -28,7 +28,7 @@ def load_char_images():
     return {}
 
 # ---------------------------------------------------------
-# 1. 온라인 구글 시트 데이터 로드 함수 (A열 기준 캐릭명 감지)
+# 1. 온라인 구글 시트 데이터 로드 함수 (이전 방식으로 복구)
 # ---------------------------------------------------------
 def load_data():
     sheet_id = "1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb"
@@ -70,7 +70,7 @@ def load_data():
     data_df = data_df.iloc[:, :len(column_names)]
     data_df.columns = column_names
 
-    # A열(인덱스 0)에서만 캐릭명이 존재하는 행 번호 추출
+    # A열(인덱스 0)에서만 캐릭명이 존재하는 행 번호 추출 (원래 로직)
     char_indices = []
     for idx, val in enumerate(data_df.iloc[:, 0]):  # A열만 순회
         if pd.notna(val) and str(val).strip() not in ["", "nan", "None", "-"]:
@@ -80,7 +80,7 @@ def load_data():
     
     # A열에서 찾은 캐릭명 시작 행을 기준으로 캐릭터 단위 분할
     for i, start_idx in enumerate(char_indices):
-        end_idx = char_indices[i+1] if i + 1 < len(char_indices) else start_idx + 4
+        end_idx = char_indices[i+1] if i + 1 < len(char_indices) else len(data_df)
         chunk = data_df.iloc[start_idx:end_idx].copy()
         
         # A열 첫 번째 값으로 캐릭명 지정
