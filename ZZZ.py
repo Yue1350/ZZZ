@@ -262,13 +262,12 @@ def load_char_english():
     return {}
 
 # ---------------------------------------------------------
-# 4. 이미지 검색 함수 (Cloudflare 우회 + Safebooru 자동 전환)
+# 4. 3중 안전 일러스트 검색 함수 (Danbooru -> Gelbooru -> Yande.re)
 # ---------------------------------------------------------
 def fetch_character_image(character_query: str):
     clean_query = character_query.strip().replace(" ", "_").lower()
     char_tag_map = load_char_english()
 
-    # 영문 태그 매핑 확인
     if clean_query in char_tag_map:
         search_tag = char_tag_map[clean_query].replace(" ", "_")
     else:
@@ -276,20 +275,16 @@ def fetch_character_image(character_query: str):
 
     encoded_tag = urllib.parse.quote(search_tag)
     
-    # 1. Danbooru 검색 시도
+    # [1차 시도] Danbooru API
     danbooru_url = f"https://danbooru.donmai.us/posts.json?tags={encoded_tag}+zenless_zone_zero+rating:g&limit=25"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
     try:
         req = urllib.request.Request(danbooru_url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
 
-        if data:
+        if data and isinstance(data, list):
             selected = random.choice(data)
             image_url = selected.get("large_file_url") or selected.get("file_url")
             post_id = selected.get("id")
@@ -305,48 +300,65 @@ def fetch_character_image(character_query: str):
                 embed.set_image(url=image_url)
                 embed.set_footer(text="Danbooru Search")
                 return True, embed, None
-
     except Exception as e:
-        print(f"Danbooru 차단/오류 발생 -> Safebooru 우회 시도: {e}")
+        print(f"Danbooru 패스: {e}")
 
-    # 2. Danbooru 실패/차단(403) 시 Safebooru API로 자동 대체 (차단 없는 우회 서버)
-    safebooru_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&tags={encoded_tag}+zenless_zone_zero&limit=25"
-    
+    # [2차 시도] Gelbooru API (오픈 API, 차단 없음)
+    gelbooru_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&tags={encoded_tag}+rating:general&limit=25"
     try:
-        req = urllib.request.Request(safebooru_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=8) as response:
-            safe_data = json.loads(response.read().decode("utf-8"))
+        req = urllib.request.Request(gelbooru_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            res_text = response.read().decode("utf-8")
+            if res_text.strip().startswith("{"):
+                gel_data = json.loads(res_text)
+                posts = gel_data.get("post", [])
+                if posts:
+                    selected = random.choice(posts)
+                    image_url = selected.get("file_url")
+                    post_id = selected.get("id")
 
-        if not safe_data:
-            # 젠존제 태그 제외 후 재검색
-            retry_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&tags={encoded_tag}&limit=25"
-            req = urllib.request.Request(retry_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                safe_data = json.loads(resp.read().decode("utf-8"))
-
-        if not safe_data:
-            return False, f"❌ **{character_query}** 관련 이미지를 찾지 못했어!", None
-
-        selected = random.choice(safe_data)
-        file_name = selected.get("image")
-        dir_id = selected.get("directory")
-        post_id = selected.get("id")
-
-        image_url = f"https://safebooru.org/images/{dir_id}/{file_name}"
-
-        embed = discord.Embed(
-            title=f"🎨 {character_query} 일러스트",
-            url=f"https://safebooru.org/index.php?page=post&s=view&id={post_id}",
-            color=0x0096FA
-        )
-        embed.set_image(url=image_url)
-        embed.set_footer(text="Safebooru Search (우회 서버)")
-
-        return True, embed, None
-
+                    embed = discord.Embed(
+                        title=f"🎨 {character_query} 일러스트",
+                        url=f"https://gelbooru.com/index.php?page=post&s=view&id={post_id}",
+                        color=0x0096FA
+                    )
+                    embed.set_image(url=image_url)
+                    embed.set_footer(text="Gelbooru Search")
+                    return True, embed, None
     except Exception as e:
-        print(f"우회 서버 오류: {e}")
-        return False, f"⚠️ 이미지를 가져오는 중 오류가 발생했어: {e}", None
+        print(f"Gelbooru 패스: {e}")
+
+    # [3차 시도] Yande.re API (오픈 API, 차단 없음)
+    yandere_url = f"https://yande.re/post.json?tags={encoded_tag}&limit=25"
+    try:
+        req = urllib.request.Request(yandere_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            res_text = response.read().decode("utf-8")
+            if res_text.strip().startswith("["):
+                yan_data = json.loads(res_text)
+                # 안전 등급(rating == 's') 필터링
+                safe_posts = [p for p in yan_data if p.get("rating") == "s"]
+                target_posts = safe_posts if safe_posts else yan_data
+                
+                if target_posts:
+                    selected = random.choice(target_posts)
+                    image_url = selected.get("sample_url") or selected.get("file_url")
+                    post_id = selected.get("id")
+                    author = selected.get("author", "Unknown")
+
+                    embed = discord.Embed(
+                        title=f"🎨 {character_query} 일러스트",
+                        url=f"https://yande.re/post/show/{post_id}",
+                        color=0x0096FA
+                    )
+                    embed.add_field(name="올린이", value=author, inline=True)
+                    embed.set_image(url=image_url)
+                    embed.set_footer(text="Yande.re Search")
+                    return True, embed, None
+    except Exception as e:
+        print(f"Yande.re 패스: {e}")
+
+    return False, f"❌ **{character_query}** 관련 이미지를 찾지 못했어!", None
 
 # ---------------------------------------------------------
 # 5. 디스코드 이벤트 및 명령어
