@@ -297,7 +297,7 @@ def fetch_random_zzz_image():
                     post_id = selected.get("id")
 
                     embed = discord.Embed(
-                        title="🎨 젠레스 존 제로 랜덤 일러스트",
+                        title="",
                         url=f"https://gelbooru.com/index.php?page=post&s=view&id={post_id}",
                         color=0x0096FA
                     )
@@ -324,7 +324,7 @@ def fetch_random_zzz_image():
                     post_id = selected.get("id")
 
                     embed = discord.Embed(
-                        title="🎨 젠레스 존 제로 랜덤 일러스트",
+                        title="",
                         url=f"https://yande.re/post/show/{post_id}",
                         color=0x0096FA
                     )
