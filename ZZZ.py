@@ -271,7 +271,7 @@ def fetch_random_zzz_image():
                 artist_tag = selected.get("tag_string_artist", "Unknown")
 
                 embed = discord.Embed(
-                    title="🎨 젠레스 존 제로 랜덤 일러스트",
+                    title="",
                     url=f"https://danbooru.donmai.us/posts/{post_id}",
                     color=0x0096FA
                 )
