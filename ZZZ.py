@@ -25,13 +25,15 @@ def load_char_images():
     if os.path.exists("char_images.json"):
         try:
             with open("char_images.json", "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                # 키(캐릭터명) 앞뒤 공백 제거 정리
+                return {str(k).strip(): str(v).strip() for k, v in data.items()}
         except Exception as e:
             print(f"JSON 로드 중 오류 발생: {e}")
     return {}
 
 # ---------------------------------------------------------
-# 1. 온라인 구글 시트 데이터 로드 함수 (이전 방식으로 복구)
+# 1. 온라인 구글 시트 데이터 로드 함수
 # ---------------------------------------------------------
 def load_data():
     sheet_id = "1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb"
@@ -47,9 +49,6 @@ def load_data():
     except Exception as e:
         print(f"구글 시트 로드 중 오류 발생: {e}")
         return pd.DataFrame()
-
-    # 1~5행(인덱스 0~4) 제거하고 6행(인덱스 5)부터 데이터로 사용
-    data_df = raw_df.iloc[5:].reset_index(drop=True)
 
     column_names = [
         "캐릭명",       # A (0)
@@ -69,30 +68,32 @@ def load_data():
         "치명타",       # O (14)
         "기타"          # P (15)
     ]
-    
-    data_df = data_df.iloc[:, :len(column_names)]
-    data_df.columns = column_names
 
-    # A열(인덱스 0)에서만 캐릭명이 존재하는 행 번호 추출 (원래 로직)
-    char_indices = []
-    for idx, val in enumerate(data_df.iloc[:, 0]):  # A열만 순회
-        if pd.notna(val) and str(val).strip() not in ["", "nan", "None", "-"]:
-            char_indices.append(idx)
+    raw_df = raw_df.iloc[:, :len(column_names)]
+    raw_df.columns = column_names
+
+    all_indices = []
+    for idx, val in enumerate(raw_df.iloc[:, 0]):
+        if pd.notna(val):
+            val_str = str(val).strip()
+            if val_str and val_str not in ["캐릭명", "캐릭터", "캐릭터명", "nan", "None", "-", "이름"]:
+                all_indices.append(idx)
+
+    if not all_indices:
+        return pd.DataFrame()
 
     processed_rows = []
-    
-    # A열에서 찾은 캐릭명 시작 행을 기준으로 캐릭터 단위 분할
-    for i, start_idx in enumerate(char_indices):
-        end_idx = char_indices[i+1] if i + 1 < len(char_indices) else len(data_df)
-        chunk = data_df.iloc[start_idx:end_idx].copy()
+
+    for i, start_idx in enumerate(all_indices):
+        end_idx = all_indices[i+1] if i + 1 < len(all_indices) else len(raw_df)
+        chunk = raw_df.iloc[start_idx:end_idx].copy()
         
-        # A열 첫 번째 값으로 캐릭명 지정
         char_name = str(chunk.iloc[0, 0]).strip()
 
         row_data = {}
         for col in column_names:
             valid_vals = chunk[col].dropna().astype(str).str.strip()
-            valid_vals = [v for v in valid_vals if v not in ["", "nan", "None", "-"]]
+            valid_vals = [v for v in valid_vals if v not in ["", "nan", "None", "-", "NaN"]]
             
             if col in ["disc_4", "disc_5", "disc_6"]:
                 row_data[col] = valid_vals[0] if valid_vals else "-"
@@ -101,7 +102,6 @@ def load_data():
             else:
                 row_data[col] = valid_vals[0] if valid_vals else "-"
 
-        # 디스크 4/5/6번 주옵션 하나로 합치기
         mains = [row_data["disc_4"], row_data["disc_5"], row_data["disc_6"]]
         mains = [m for m in mains if m != "-"]
         row_data["통합디스크주옵션"] = " / ".join(mains) if mains else "-"
@@ -113,7 +113,7 @@ def load_data():
     return final_df
 
 # ---------------------------------------------------------
-# 2. 임베드 생성 함수
+# 2. 임베드 생성 함수 (사진 매칭 보완)
 # ---------------------------------------------------------
 def create_setting_embed(row):
     char_name = str(row["캐릭명"]).strip()
@@ -127,8 +127,8 @@ def create_setting_embed(row):
         color=0x00ff00
     )
 
-    # JSON에 이미지가 등록되어 있다면 임베드 썸네일로 추가
-    if image_url:
+    # image_url 유효성 체크 후 썸네일 설정
+    if image_url and (image_url.startswith("http://") or image_url.startswith("https://")):
         embed.set_thumbnail(url=image_url)
 
     embed.add_field(name="🏛️ 진영", value=row["진영"], inline=True)
@@ -321,7 +321,7 @@ async def setting_prefix(ctx, *, 캐릭터: str = None):
         await ctx.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}")
 
 # ---------------------------------------------------------
-# 봇 실행 (Render 환경 변수에서 토큰 로드)
+# 봇 실행
 # ---------------------------------------------------------
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
