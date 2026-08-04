@@ -1,5 +1,8 @@
+import io
+import json
 import os
 import urllib.parse
+import urllib.request
 from dotenv import load_dotenv
 import discord
 from discord import app_commands
@@ -12,33 +15,51 @@ load_dotenv()
 keep_alive()
 
 # ---------------------------------------------------------
-# 1. zzz_data.csv 데이터 로드 함수 (3행 1세트 데이터 보정)
+# 📸 외부 JSON 파일에서 캐릭터 이미지 사전 불러오기
+# ---------------------------------------------------------
+CHARACTER_IMAGES = {}
+try:
+    with open("character_images.json", "r", encoding="utf-8") as f:
+        CHARACTER_IMAGES = json.load(f)
+except FileNotFoundError:
+    print("⚠️ character_images.json 파일을 찾을 수 없어 기본 이미지를 사용합니다.")
+except Exception as e:
+    print(f"⚠️ JSON 파일 로드 실패: {e}")
+
+# ---------------------------------------------------------
+# 1. 온라인 구글 시트 데이터 로드 함수 (3행 1세트 데이터 및 빈 칸 보정)
 # ---------------------------------------------------------
 def load_data():
-    csv_file = "zzz_data.csv"
+    sheet_id = "1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb"
+    gid = "2007866856"
+    csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     
     try:
-        df = pd.read_csv(csv_file, encoding="utf-8-sig", header=1)
-    except UnicodeDecodeError:
-        try:
-            df = pd.read_csv(csv_file, encoding="utf-8", header=1)
-        except UnicodeDecodeError:
-            df = pd.read_csv(csv_file, encoding="cp949", header=1)
+        req = urllib.request.Request(csv_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            content = response.read()
+            
+        df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig", header=1)
+    except Exception as e:
+        print(f"구글 시트 로드 중 오류 발생: {e}")
+        return pd.DataFrame()
 
     # 컬럼명 공백 및 줄바꿈 제거
     df.columns = [str(col).replace("\n", "").replace(" ", "").strip() for col in df.columns]
 
-    # 3행 1세트 데이터 채우기 (캐릭명/진영은 아래에서 위로)
+    # 캐릭명/진영 채우기 (빈 행을 위 캐릭터 이름으로 채움)
     if "캐릭명" in df.columns:
-        df["캐릭명"] = df["캐릭명"].bfill()
+        df["캐릭명"] = df["캐릭명"].ffill()
 
     if "진영" in df.columns:
-        df["진영"] = df["진영"].bfill().ffill()
+        df["진영"] = df["진영"].ffill()
 
+    # 다른 캐릭터의 값이 빈 칸으로 넘어가 채워지는 현상을 방지하기 위해 
+    # 캐릭터별 그룹(groupby)을 지정하여 ffill을 수행
     fill_targets = ["특성", "포지션", "W-엔진", "4세트", "2세트", "디스크주옵션", "유효부옵션", "핵심돌파", "주옵", "치명타", "기타"]
     for target in fill_targets:
         if target in df.columns:
-            df[target] = df[target].ffill()
+            df[target] = df.groupby("캐릭명")[target].ffill()
 
     skill_col = [c for c in df.columns if "스킬" in c]
     if skill_col:
@@ -48,10 +69,10 @@ def load_data():
     unnamed_cols = [c for c in df.columns if "Unnamed" in c]
     for idx, row in df.iterrows():
         mains = []
-        if pd.notna(row.get("디스크주옵션")):
+        if pd.notna(row.get("디스크주옵션")) and str(row.get("디스크주옵션")).strip() not in ["", "nan", "None"]:
             mains.append(str(row["디스크주옵션"]).replace("\n", " ").strip())
         for u_col in unnamed_cols:
-            if pd.notna(row.get(u_col)):
+            if pd.notna(row.get(u_col)) and str(row.get(u_col)).strip() not in ["", "nan", "None"]:
                 mains.append(str(row[u_col]).replace("\n", " ").strip())
         df.at[idx, "통합디스크주옵션"] = " / ".join(mains) if mains else "-"
 
@@ -62,7 +83,7 @@ def load_data():
     return df
 
 # ---------------------------------------------------------
-# 2. 임베드 생성 함수 (가독성 컴팩트 배치 & 스킬 레벨 필드화)
+# 2. 임베드 생성 함수 (커스텀 이미지 적용)
 # ---------------------------------------------------------
 def create_setting_embed(row):
     def get_val(col_name):
@@ -91,38 +112,41 @@ def create_setting_embed(row):
         color=0x2B2D31
     )
 
-    # 썸네일 URL 인코딩 및 안전 처리
-    try:
-        clean_char = c_name.replace("S.", "").strip()
-        encoded_char = urllib.parse.quote(clean_char)
-        img_url = f"https://act-webstatic.hoyoverse.com/game_record/zzz/role_square_avatar/{encoded_char}.png"
-        embed.set_thumbnail(url=img_url)
-    except Exception:
-        pass
+    # CHARACTER_IMAGES에 직접 지정한 이미지 URL이 있으면 우측 상단 썸네일로 사용
+    if c_name in CHARACTER_IMAGES:
+        embed.set_thumbnail(url=CHARACTER_IMAGES[c_name])
+    else:
+        try:
+            clean_char = c_name.replace("S.", "").strip()
+            encoded_char = urllib.parse.quote(clean_char)
+            img_url = f"https://act-webstatic.hoyoverse.com/game_record/zzz/role_square_avatar/{encoded_char}.png"
+            embed.set_thumbnail(url=img_url)
+        except Exception:
+            pass
 
-    # [1] 기본 정보 (3열 가로 배치)
+    # [1] 기본 정보
     embed.add_field(name="🏛️ 진영", value=f"```{faction}```", inline=True)
     embed.add_field(name="⚡ 특성", value=f"```{trait}```", inline=True)
     embed.add_field(name="🎯 포지션", value=f"```{position}```", inline=True)
 
-    # [2] 스킬 및 장비 (긴 텍스트는 한 줄 전체 사용)
+    # [2] 스킬 및 장비
     embed.add_field(name="🔝 스킬 레벨 우선순위 (평,회,지,특,궁)", value=f"```{skill_lvl}```", inline=False)
     embed.add_field(name="🗡️ W-엔진", value=f"```{w_engine}```", inline=False)
     
-    # [3] 디스크 세트 (2열 배치)
+    # [3] 디스크 세트
     embed.add_field(name="💿 4세트", value=f"```{set_4}```", inline=True)
     embed.add_field(name="💿 2세트", value=f"```{set_2}```", inline=True)
 
-    # [4] 디스크 옵션 (한 줄 전체)
+    # [4] 디스크 옵션
     embed.add_field(name="📊 디스크 주옵션 (4/5/6번)", value=f"```{disc_main_text}```", inline=False)
     embed.add_field(name="🔍 유효 부옵션", value=f"```{sub_stats}```", inline=False)
 
-    # [5] 스탯 및 돌파 정보 (3열 가로 배치)
+    # [5] 스탯 및 돌파 정보
     embed.add_field(name="🔓 핵심 돌파", value=f"```{breakthrough}```", inline=True)
     embed.add_field(name="📈 주옵 스탯", value=f"```{main_stat}```", inline=True)
     embed.add_field(name="💥 치명타", value=f"```{crit_stat}```", inline=True)
 
-    # [6] 기타 / 계산법 (있을 때만 하단에 배치)
+    # [6] 기타 / 계산법
     if etc != "-":
         embed.add_field(name="📝 기타 / 계산법", value=f"```{etc}```", inline=False)
 
