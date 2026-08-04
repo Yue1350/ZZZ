@@ -1,4 +1,4 @@
-import os, io, json, ssl, urllib.request, discord, random, pandas as pd
+import os, io, json, ssl, urllib.request, discord, urllib.parse, random, pandas as pd
 from discord.ext import commands
 from discord import app_commands
 from keep_alive import keep_alive
@@ -247,32 +247,39 @@ class CharacterSelectView(discord.ui.View):
         self.add_item(CharacterSelect(matched_df))
 
 # ---------------------------------------------------------
-# 4. Safebooru 이미지 검색 공통 로직 함수 (Pixiv 대체)
+# 4. Safebooru 이미지 검색 공통 로직 함수 (인코딩 에러 수정 완료)
 # ---------------------------------------------------------
 def fetch_pixiv_image(character_query: str):
     try:
-        # 태그 가공 (공백은 언더바로 변경, 젠존제 태그 자동 추가)
+        # 1. 입력된 캐릭터명을 URL 안전 문자로 인코딩 (한글 오류 방지)
         tag = character_query.strip().replace(" ", "_").lower()
-        search_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={tag}+zenless_zone_zero"
+        encoded_tag = urllib.parse.quote(tag)
 
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        search_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={encoded_tag}+zenless_zone_zero"
+
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         req = urllib.request.Request(search_url, headers=headers)
         context = ssl._create_unverified_context()
 
         with urllib.request.urlopen(req, context=context) as response:
-            data = json.loads(response.read().decode('utf-8'))
+            data = json.loads(response.read().decode("utf-8"))
 
+        # 2. 결과가 없으면 젠존제 태그 제외하고 재시도
         if not data:
-            # 젠존제 태그 없이 캐릭터명으로 재시도
-            fallback_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={tag}"
+            fallback_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={encoded_tag}"
             req_fb = urllib.request.Request(fallback_url, headers=headers)
             with urllib.request.urlopen(req_fb, context=context) as response_fb:
-                data = json.loads(response_fb.read().decode('utf-8'))
+                data = json.loads(response_fb.read().decode("utf-8"))
 
         if not data:
-            return False, f"❌ **{character_query}** 관련 이미지를 찾지 못했어!", None, None
+            return (
+                False,
+                f"❌ **{character_query}** 관련 이미지를 찾지 못했어!",
+                None,
+                None,
+            )
 
-        # 결과 중 랜덤 1개 선택
+        # 3. 결과 중 랜덤 1개 선택
         selected = random.choice(data)
         image_url = f"https://safebooru.org/images/{selected['directory']}/{selected['image']}"
         post_url = f"https://safebooru.org/index.php?page=post&s=view&id={selected['id']}"
@@ -280,7 +287,7 @@ def fetch_pixiv_image(character_query: str):
         embed = discord.Embed(
             title=f"🎨 {character_query} 일러스트",
             url=post_url,
-            color=0x0096fa
+            color=0x0096FA,
         )
         embed.set_image(url=image_url)
         embed.set_footer(text="Safebooru Image Search")
