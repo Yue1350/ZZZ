@@ -1,11 +1,14 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+from keep_alive import keep_alive
 import pandas as pd
 import io
 import urllib.request
 import json
 import os
+
+keep_alive()
 
 # ---------------------------------------------------------
 # 봇 기본 설정
