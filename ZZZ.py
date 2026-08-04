@@ -1,13 +1,7 @@
-import discord
+import os, io, json, ssl, urllib.request, discord, pandas as pd
 from discord.ext import commands
 from discord import app_commands
 from keep_alive import keep_alive
-import pandas as pd
-import io
-import urllib.request
-import json
-import os
-import ssl
 
 keep_alive()
 
@@ -60,13 +54,17 @@ def load_data():
     ]
 
     try:
-        req = urllib.request.Request(csv_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
+        context = ssl._create_unverified_context()
+        req = urllib.request.Request(
+            csv_url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        with urllib.request.urlopen(req, context=context) as response:
             content = response.read()
             
         raw_df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig", header=None)
     except Exception as e:
-        print(f"구글 시트 로드 중 오류 발생: {e}")
+        print(f"❌ 구글 시트 로드 중 오류 발생: {e}")
         return pd.DataFrame(columns=column_names + ["통합디스크주옵션"])
 
     raw_df = raw_df.iloc[:, :len(column_names)]
@@ -109,6 +107,7 @@ def load_data():
         processed_rows.append(row_data)
 
     if not processed_rows:
+        print("⚠️ 데이터 처리 결과가 비어있음")
         return pd.DataFrame(columns=column_names + ["통합디스크주옵션"])
 
     final_df = pd.DataFrame(processed_rows)
@@ -250,7 +249,7 @@ class CharacterSelectView(discord.ui.View):
 async def on_ready():
     print(f"🤖 봇 로그인 성공: {bot.user.name}")
     
-    # 봇 상태 메세지 설정 ("에이전트 관리 중")
+    # 봇 상태 메세지 설정
     await bot.change_presence(activity=discord.Game(name="에이전트 관리 중"))
     
     try:
@@ -381,7 +380,9 @@ async def setting_prefix(ctx, *, 캐릭터: str = None):
     except Exception as e:
         await ctx.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}")
 
+# ---------------------------------------------------------
 # 봇 실행
+# ---------------------------------------------------------
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
 bot.run(TOKEN)
