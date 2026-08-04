@@ -27,7 +27,7 @@ def load_char_images():
     return {}
 
 # ---------------------------------------------------------
-# 1. 온라인 구글 시트 데이터 로드 함수
+# 1. 온라인 구글 시트 데이터 로드 함수 (4행 1세트 전용 로직)
 # ---------------------------------------------------------
 def load_data():
     sheet_id = "1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb"
@@ -73,7 +73,7 @@ def load_data():
     processed_rows = []
     total_rows = len(raw_df)
 
-    # 6행(인덱스 5)부터 4행 단위로 끊어 읽기
+    # 6행(인덱스 5)부터 4행 단위로 묶어서 처리
     for start_idx in range(5, total_rows, 4):
         chunk = raw_df.iloc[start_idx : start_idx + 4].copy()
         if chunk.empty:
