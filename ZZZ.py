@@ -14,7 +14,7 @@ keep_alive()
 # 봇 기본 설정
 # ---------------------------------------------------------
 intents = discord.Intents.default()
-intents.message_content = True  # 메시지 내용 접근 권한
+intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -32,7 +32,7 @@ def load_char_images():
     return {}
 
 # ---------------------------------------------------------
-# 1. 온라인 구글 시트 데이터 로드 함수
+# 1. 온라인 구글 시트 데이터 로드 함수 (전체 데이터)
 # ---------------------------------------------------------
 def load_data():
     sheet_id = "1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb"
@@ -71,31 +71,26 @@ def load_data():
     raw_df = raw_df.iloc[:, :len(column_names)]
     raw_df.columns = column_names
 
-    # A열에서 캐릭터 시작 위치(인덱스) 찾아내기
-    all_indices = []
-    ignore_words = ["캐릭명", "캐릭터", "캐릭터명", "nan", "none", "-", "이름", "null", ""]
-    
-    for idx, val in enumerate(raw_df.iloc[:, 0]):
-        if pd.notna(val):
-            val_str = str(val).strip()
-            if val_str.lower() not in ignore_words:
-                all_indices.append(idx)
-
-    if not all_indices:
-        return pd.DataFrame()
-
     processed_rows = []
+    total_rows = len(raw_df)
 
-    for i, start_idx in enumerate(all_indices):
-        end_idx = all_indices[i+1] if i + 1 < len(all_indices) else len(raw_df)
-        chunk = raw_df.iloc[start_idx:end_idx].copy()
-        
-        char_name = str(chunk.iloc[0, 0]).strip()
+    for start_idx in range(5, total_rows, 4):
+        chunk = raw_df.iloc[start_idx : start_idx + 4].copy()
+        if chunk.empty:
+            break
+
+        first_val = chunk.iloc[0, 0]
+        if pd.isna(first_val):
+            continue
+            
+        char_name = str(first_val).strip()
+        if not char_name or char_name in ["캐릭명", "캐릭터", "nan", "None", "-", "이름"]:
+            continue
 
         row_data = {}
         for col in column_names:
             valid_vals = chunk[col].dropna().astype(str).str.strip()
-            valid_vals = [v for v in valid_vals if v.lower() not in ignore_words and v != "nan"]
+            valid_vals = [v for v in valid_vals if v not in ["", "nan", "None", "-", "NaN"]]
             
             if col in ["disc_4", "disc_5", "disc_6"]:
                 row_data[col] = valid_vals[0] if valid_vals else "-"
@@ -174,7 +169,7 @@ class CategorySelect(discord.ui.Select):
             char_list = self.df["캐릭명"].tolist()
             text_list = ", ".join(char_list)
             embed = discord.Embed(title="📜 전체 캐릭터 목록", description=text_list, color=0x3498db)
-            await interaction.response.edit_message(content="검색 가능한 캐릭터 목록이야!", embed=embed, view=None)
+            await interaction.response.edit_message(content="검색 가능한 전체 캐릭터 목록이야!", embed=embed, view=None)
             
         elif selected in ["진영", "특성", "포지션"]:
             view = SubCategoryView(self.df, selected)
@@ -249,19 +244,16 @@ async def on_ready():
 @bot.tree.command(name="세팅", description="젠존제 캐릭터 세팅 정보를 검색해!")
 @app_commands.describe(캐릭터="검색할 캐릭터 이름을 입력해줘 (선택 사항)")
 async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None):
-    # 응답 대기 상태 설정
     await interaction.response.defer(ephemeral=(캐릭터 is None))
     
     try:
         if 캐릭터:
             search_name = 캐릭터.replace(" ", "").lower()
             
-            # 예외 처리 1: '배연우'
             if search_name == "배연우":
                 await interaction.followup.send(f"{interaction.user.mention} 너 배연우")
                 return
 
-            # 예외 처리 2: '베리나'
             if search_name == "베리나":
                 images = load_char_images()
                 img_url = images.get("베리나", "https://i.namu.wiki/i/eACVAos4WR6IB2Y1AlVn8qXnKlzxYWTsR6AULHvS9w-bbhphy1X4_iszgM8zdCRhSA0zfvvZpqNRIluNxNauxw.webp")
@@ -284,7 +276,6 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
             await interaction.followup.send("원하는 카테고리를 아래 드롭다운에서 골라줘!", view=view, ephemeral=True)
 
     except Exception as e:
-        # defer() 상태에서의 오류 전송은 followup으로 처리해야 함!
         await interaction.followup.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
 
 # 일반 명령어 (!세팅 [캐릭터])
@@ -294,12 +285,10 @@ async def setting_prefix(ctx, *, 캐릭터: str = None):
         if 캐릭터:
             search_name = 캐릭터.replace(" ", "").lower()
             
-            # 예외 처리 1: '배연우'
             if search_name == "배연우":
                 await ctx.send(f"{ctx.author.mention} 너 배연우")
                 return
 
-            # 예외 처리 2: '베리나'
             if search_name == "베리나":
                 images = load_char_images()
                 img_url = images.get("베리나", "https://i.namu.wiki/i/eACVAos4WR6IB2Y1AlVn8qXnKlzxYWTsR6AULHvS9w-bbhphy1X4_iszgM8zdCRhSA0zfvvZpqNRIluNxNauxw.webp")
