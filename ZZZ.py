@@ -262,69 +262,91 @@ def load_char_english():
     return {}
 
 # ---------------------------------------------------------
-# 4. Danbooru API 기반 일러스트 검색 함수 (403 에러 우회 적용)
+# 4. 이미지 검색 함수 (Cloudflare 우회 + Safebooru 자동 전환)
 # ---------------------------------------------------------
 def fetch_character_image(character_query: str):
     clean_query = character_query.strip().replace(" ", "_").lower()
     char_tag_map = load_char_english()
 
-    # char_english.json 매핑명이 있으면 영문 태그 사용
+    # 영문 태그 매핑 확인
     if clean_query in char_tag_map:
         search_tag = char_tag_map[clean_query].replace(" ", "_")
     else:
         search_tag = clean_query
 
-    # 검색어 URL 인코딩
     encoded_tag = urllib.parse.quote(search_tag)
-    search_url = f"https://danbooru.donmai.us/posts.json?tags={encoded_tag}+zenless_zone_zero+rating:g&limit=25"
-
-    # Danbooru 403 차단 방지를 위한 크롬 브라우저 헤더 설정
+    
+    # 1. Danbooru 검색 시도
+    danbooru_url = f"https://danbooru.donmai.us/posts.json?tags={encoded_tag}+zenless_zone_zero+rating:g&limit=25"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/javascript, */*; q=0.01"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
     }
 
     try:
-        req = urllib.request.Request(search_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as response:
+        req = urllib.request.Request(danbooru_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
 
-        # 젠존제 태그 조합 실패 시 캐릭터 태그 단독 검색
-        if not data:
-            retry_url = f"https://danbooru.donmai.us/posts.json?tags={encoded_tag}+rating:g&limit=25"
-            req = urllib.request.Request(retry_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+        if data:
+            selected = random.choice(data)
+            image_url = selected.get("large_file_url") or selected.get("file_url")
+            post_id = selected.get("id")
+            artist_tag = selected.get("tag_string_artist", "Unknown")
 
-        if not data:
+            if image_url:
+                embed = discord.Embed(
+                    title=f"🎨 {character_query} 일러스트",
+                    url=f"https://danbooru.donmai.us/posts/{post_id}",
+                    color=0x0096FA
+                )
+                embed.add_field(name="작가", value=artist_tag.replace("_", " "), inline=True)
+                embed.set_image(url=image_url)
+                embed.set_footer(text="Danbooru Search")
+                return True, embed, None
+
+    except Exception as e:
+        print(f"Danbooru 차단/오류 발생 -> Safebooru 우회 시도: {e}")
+
+    # 2. Danbooru 실패/차단(403) 시 Safebooru API로 자동 대체 (차단 없는 우회 서버)
+    safebooru_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&tags={encoded_tag}+zenless_zone_zero&limit=25"
+    
+    try:
+        req = urllib.request.Request(safebooru_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as response:
+            safe_data = json.loads(response.read().decode("utf-8"))
+
+        if not safe_data:
+            # 젠존제 태그 제외 후 재검색
+            retry_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&tags={encoded_tag}&limit=25"
+            req = urllib.request.Request(retry_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                safe_data = json.loads(resp.read().decode("utf-8"))
+
+        if not safe_data:
             return False, f"❌ **{character_query}** 관련 이미지를 찾지 못했어!", None
 
-        # 결과 중 무작위 1개 선택
-        selected = random.choice(data)
-        image_url = selected.get("large_file_url") or selected.get("file_url")
+        selected = random.choice(safe_data)
+        file_name = selected.get("image")
+        dir_id = selected.get("directory")
         post_id = selected.get("id")
-        artist_tag = selected.get("tag_string_artist", "Unknown")
 
-        if not image_url:
-            return False, "⚠️ 이미지 링크를 가져올 수 없어!", None
+        image_url = f"https://safebooru.org/images/{dir_id}/{file_name}"
 
         embed = discord.Embed(
             title=f"🎨 {character_query} 일러스트",
-            url=f"https://danbooru.donmai.us/posts/{post_id}",
+            url=f"https://safebooru.org/index.php?page=post&s=view&id={post_id}",
             color=0x0096FA
         )
-        embed.add_field(name="작가", value=artist_tag.replace("_", " "), inline=True)
         embed.set_image(url=image_url)
-        embed.set_footer(text="Danbooru API Search")
+        embed.set_footer(text="Safebooru Search (우회 서버)")
 
         return True, embed, None
 
-    except urllib.error.HTTPError as e:
-        print(f"HTTP Error 발생: {e.code} - {e.reason}")
-        return False, f"⚠️ 이미지 서버 접속이 차단되었어 (HTTP {e.code}). 잠시 후 다시 시도해 줘!", None
     except Exception as e:
-        print(f"이미지 검색 중 오류 발생: {e}")
-        return False, f"⚠️ 이미지를 불러오는 중 오류가 발생했어: {e}", None
+        print(f"우회 서버 오류: {e}")
+        return False, f"⚠️ 이미지를 가져오는 중 오류가 발생했어: {e}", None
 
 # ---------------------------------------------------------
 # 5. 디스코드 이벤트 및 명령어
