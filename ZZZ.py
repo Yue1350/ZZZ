@@ -247,14 +247,42 @@ class CharacterSelectView(discord.ui.View):
         self.add_item(CharacterSelect(matched_df))
 
 # ---------------------------------------------------------
-# 4. Safebooru 이미지 검색 공통 로직 함수 (인코딩 에러 수정 완료)
+# 영문 태그 JSON 로드 함수
+# ---------------------------------------------------------
+def load_char_english():
+    if os.path.exists("char_english.json"):
+        try:
+            with open("char_english.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return {
+                    str(k).strip().lower(): str(v).strip().lower()
+                    for k, v in data.items()
+                }
+        except Exception as e:
+            print(f"char_english.json 로드 중 오류 발생: {e}")
+    return {}
+
+
+# ---------------------------------------------------------
+# 4. Safebooru 이미지 검색 공통 로직 함수 (JSON 연동)
 # ---------------------------------------------------------
 def fetch_pixiv_image(character_query: str):
     try:
-        # 1. 입력된 캐릭터명을 URL 안전 문자로 인코딩 (한글 오류 방지)
-        tag = character_query.strip().replace(" ", "_").lower()
+        clean_query = character_query.strip().replace(" ", "").lower()
+
+        # JSON 데이터 로드
+        char_tag_map = load_char_english()
+
+        # 1. 한글 매핑 사전에 있는지 확인
+        if clean_query in char_tag_map:
+            tag = char_tag_map[clean_query]
+        else:
+            tag = character_query.strip().replace(" ", "_").lower()
+
+        # URL 인코딩 처리
         encoded_tag = urllib.parse.quote(tag)
 
+        # Safebooru 검색 URL 생성
         search_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={encoded_tag}+zenless_zone_zero"
 
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -264,7 +292,7 @@ def fetch_pixiv_image(character_query: str):
         with urllib.request.urlopen(req, context=context) as response:
             data = json.loads(response.read().decode("utf-8"))
 
-        # 2. 결과가 없으면 젠존제 태그 제외하고 재시도
+        # 2. 젠존제 태그 검색 결과가 없으면 캐릭터 태그 단독으로 재시도
         if not data:
             fallback_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={encoded_tag}"
             req_fb = urllib.request.Request(fallback_url, headers=headers)
@@ -274,12 +302,12 @@ def fetch_pixiv_image(character_query: str):
         if not data:
             return (
                 False,
-                f"❌ **{character_query}** 관련 이미지를 찾지 못했어!",
+                f"❌ **{character_query}** (태그: `{tag}`) 관련 이미지를 찾지 못했어!",
                 None,
                 None,
             )
 
-        # 3. 결과 중 랜덤 1개 선택
+        # 3. 검색 결과 중 랜덤 1개 선택
         selected = random.choice(data)
         image_url = f"https://safebooru.org/images/{selected['directory']}/{selected['image']}"
         post_url = f"https://safebooru.org/index.php?page=post&s=view&id={selected['id']}"
@@ -290,7 +318,7 @@ def fetch_pixiv_image(character_query: str):
             color=0x0096FA,
         )
         embed.set_image(url=image_url)
-        embed.set_footer(text="Safebooru Image Search")
+        embed.set_footer(text=f"Safebooru Search • Tag: {tag}")
 
         return True, embed, None, None
 
