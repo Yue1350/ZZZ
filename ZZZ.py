@@ -318,8 +318,8 @@ async def setting_prefix(ctx, *, 캐릭터: str = None):
         await ctx.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}")
 
 # ---------------------------------------------------------
-# 봇 실행
+# 봇 실행 (Render 환경 변수에서 토큰 로드)
 # ---------------------------------------------------------
-# TOKEN 변수에 디스코드 봇 토큰을 넣어줘!
-TOKEN = "YOUR_DISCORD_BOT_TOKEN"
+TOKEN = os.environ.get("DISCORD_TOKEN")
+
 bot.run(TOKEN)
