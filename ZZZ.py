@@ -35,8 +35,22 @@ def load_data():
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     
     column_names = [
-        "캐릭명", "진영", "특성", "스킬레벨", "포지션", "W-엔진", "4세트", "2세트",
-        "disc_4", "disc_5", "disc_6", "유효부옵션", "핵심돌파", "주옵", "치명타", "기타"
+        "캐릭명",       # A (0)
+        "진영",         # B (1)
+        "특성",         # C (2)
+        "스킬레벨",     # D (3)
+        "포지션",       # E (4)
+        "W-엔진",       # F (5)
+        "4세트",        # G (6)
+        "2세트",        # H (7)
+        "disc_4",       # I (8)
+        "disc_5",       # J (9)
+        "disc_6",       # K (10)
+        "유효부옵션",   # L (11)
+        "핵심돌파",     # M (12)
+        "주옵",         # N (13)
+        "치명타",       # O (14)
+        "기타"          # P (15)
     ]
 
     try:
@@ -60,27 +74,18 @@ def load_data():
     processed_rows = []
     total_rows = len(raw_df)
 
-    # 1. 실제 데이터가 시작하는 첫 번째 행 인덱스 자동 탐색
-    start_row = 0
-    for idx in range(total_rows):
-        val = str(raw_df.iloc[idx, 0]).strip()
-        # 헤더 명칭이 아니고 내용이 있는 첫 행 찾기
-        if val and val not in ["nan", "None", "-", "NaN", "캐릭명", "캐릭터", "이름"]:
-            start_row = idx
-            print(f"📍 [디버그] 데이터 시작 행 탐색 성공: 인덱스 {start_row} (캐릭터명: {val})")
-            break
-
-    # 2. 찾은 시작점부터 4행씩 처리
-    for start_idx in range(start_row, total_rows, 4):
+    # 6행(인덱스 5)부터 4행 단위로 묶기 (6~9행, 10~13행 ...)
+    for start_idx in range(5, total_rows, 4):
         chunk = raw_df.iloc[start_idx : start_idx + 4].copy()
-        if chunk.empty:
+        if len(chunk) < 4:  # 4행이 채워지지 않는 짜투리 행은 스킵
             continue
 
-        first_val = chunk.iloc[0, 0]
-        if pd.isna(first_val):
+        # 세트의 가장 아랫줄(4번째 행, 인덱스 -1) A열에서 캐릭터명 추출
+        last_val = chunk.iloc[-1, 0]
+        if pd.isna(last_val):
             continue
             
-        char_name = str(first_val).strip()
+        char_name = str(last_val).strip()
         if not char_name or char_name in ["캐릭명", "캐릭터", "nan", "None", "-", "이름"]:
             continue
 
@@ -104,11 +109,11 @@ def load_data():
         processed_rows.append(row_data)
 
     if not processed_rows:
-        print("⚠️ [디버그] 데이터 처리 결과가 비어있습니다.")
+        print("⚠️ [디버그] 파싱된 데이터가 없어! 캐릭터 이름 위치나 행 구도를 다시 확인해 볼래?")
         return pd.DataFrame(columns=column_names + ["통합디스크주옵션"])
 
     final_df = pd.DataFrame(processed_rows)
-    print(f"✅ [디버그] 파싱 완료된 캐릭터 수: {len(final_df)}명")
+    print(f"✅ [디버그] 파싱 성공! 총 {len(final_df)}명의 캐릭터가 정상 로드됐어!")
     return final_df
     
 # ---------------------------------------------------------
