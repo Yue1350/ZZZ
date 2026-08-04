@@ -7,6 +7,7 @@ import io
 import urllib.request
 import json
 import os
+import ssl
 
 keep_alive()
 
