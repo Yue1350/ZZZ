@@ -246,57 +246,32 @@ class CharacterSelectView(discord.ui.View):
         self.add_item(CharacterSelect(matched_df))
 
 # ---------------------------------------------------------
-# 영문 태그 JSON 로드 함수
+# 4. 젠레스 존 제로 전용 렌덤 일러스트 가져오기 함수
 # ---------------------------------------------------------
-def load_char_english():
-    if os.path.exists("char_english.json"):
-        try:
-            with open("char_english.json", "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return {
-                    str(k).strip().lower(): str(v).strip().lower()
-                    for k, v in data.items()
-                }
-        except Exception as e:
-            print(f"char_english.json 로드 중 오류 발생: {e}")
-    return {}
-
-# ---------------------------------------------------------
-# 4. 젠레스 존 제로 전용 3중 일러스트 검색 함수
-# ---------------------------------------------------------
-def fetch_character_image(character_query: str):
-    clean_query = character_query.strip().replace(" ", "_").lower()
-    char_tag_map = load_char_english()
-
-    # char_english.json 매핑명이 있으면 영문 태그 사용
-    if clean_query in char_tag_map:
-        search_tag = char_tag_map[clean_query].replace(" ", "_")
-    else:
-        search_tag = clean_query
-
-    encoded_tag = urllib.parse.quote(search_tag)
-    # 젠레스 존 제로 전용 태그 (ZZZ)
+def fetch_random_zzz_image():
     zzz_tag = urllib.parse.quote("zenless_zone_zero")
+    # 다양성을 위해 무작위 페이지(1~5페이지) 선택
+    random_page = random.randint(1, 5)
     
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-    # [1차 시도] Danbooru (ZZZ 필수)
-    danbooru_url = f"https://danbooru.donmai.us/posts.json?tags={encoded_tag}+{zzz_tag}+rating:g&limit=25"
-
+    # [1차 시도] Danbooru API
+    danbooru_url = f"https://danbooru.donmai.us/posts.json?tags={zzz_tag}+rating:g&limit=50&page={random_page}"
     try:
         req = urllib.request.Request(danbooru_url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
 
         if data and isinstance(data, list):
-            selected = random.choice(data)
-            image_url = selected.get("large_file_url") or selected.get("file_url")
-            post_id = selected.get("id")
-            artist_tag = selected.get("tag_string_artist", "Unknown")
+            valid_posts = [p for p in data if p.get("large_file_url") or p.get("file_url")]
+            if valid_posts:
+                selected = random.choice(valid_posts)
+                image_url = selected.get("large_file_url") or selected.get("file_url")
+                post_id = selected.get("id")
+                artist_tag = selected.get("tag_string_artist", "Unknown")
 
-            if image_url:
                 embed = discord.Embed(
-                    title=f"🎨 {character_query} (젠존제)",
+                    title="🎨 젠레스 존 제로 랜덤 일러스트",
                     url=f"https://danbooru.donmai.us/posts/{post_id}",
                     color=0x0096FA
                 )
@@ -307,8 +282,8 @@ def fetch_character_image(character_query: str):
     except Exception as e:
         print(f"Danbooru 패스: {e}")
 
-    # [2차 시도] Gelbooru (ZZZ 필수 + rating:general)
-    gelbooru_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&tags={encoded_tag}+{zzz_tag}+rating:general&limit=25"
+    # [2차 시도] Gelbooru API
+    gelbooru_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&tags={zzz_tag}+rating:general&limit=50&pid={random_page}"
     try:
         req = urllib.request.Request(gelbooru_url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
@@ -322,7 +297,7 @@ def fetch_character_image(character_query: str):
                     post_id = selected.get("id")
 
                     embed = discord.Embed(
-                        title=f"🎨 {character_query} (젠존제)",
+                        title="🎨 젠레스 존 제로 랜덤 일러스트",
                         url=f"https://gelbooru.com/index.php?page=post&s=view&id={post_id}",
                         color=0x0096FA
                     )
@@ -332,8 +307,8 @@ def fetch_character_image(character_query: str):
     except Exception as e:
         print(f"Gelbooru 패스: {e}")
 
-    # [3차 시도] Yande.re (ZZZ 필수)
-    yandere_url = f"https://yande.re/post.json?tags={encoded_tag}+{zzz_tag}&limit=25"
+    # [3차 시도] Yande.re API
+    yandere_url = f"https://yande.re/post.json?tags={zzz_tag}&limit=50&page={random_page}"
     try:
         req = urllib.request.Request(yandere_url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
@@ -349,7 +324,7 @@ def fetch_character_image(character_query: str):
                     post_id = selected.get("id")
 
                     embed = discord.Embed(
-                        title=f"🎨 {character_query} (젠존제)",
+                        title="🎨 젠레스 존 제로 랜덤 일러스트",
                         url=f"https://yande.re/post/show/{post_id}",
                         color=0x0096FA
                     )
@@ -359,7 +334,7 @@ def fetch_character_image(character_query: str):
     except Exception as e:
         print(f"Yande.re 패스: {e}")
 
-    return False, f"❌ **{character_query}** 관련 젠레스 존 제로 이미지를 찾지 못했어!", None
+    return False, "❌ 젠레스 존 제로 이미지를 불러오지 못했어!", None
 
 # ---------------------------------------------------------
 # 5. 디스코드 이벤트 및 명령어
@@ -438,11 +413,11 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
     except Exception as e:
         await interaction.followup.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
 
-# 슬래시 명령어 (/사진 [캐릭터])
-@bot.tree.command(name="사진", description="일러스트를 가져와!")
-async def photo_slash(interaction: discord.Interaction, 캐릭터: str):
+# 슬래시 명령어 (/사진) - 파라미터 없이 랜덤 발송
+@bot.tree.command(name="사진", description="젠레스 존 제로 일러스트를 랜덤하게 가져와!")
+async def photo_slash(interaction: discord.Interaction):
     await interaction.response.defer()
-    success, res_embed, _ = fetch_character_image(캐릭터)
+    success, res_embed, _ = fetch_random_zzz_image()
 
     if success:
         await interaction.followup.send(embed=res_embed)
