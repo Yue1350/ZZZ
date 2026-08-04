@@ -32,23 +32,13 @@ def load_char_images():
     return {}
 
 # ---------------------------------------------------------
-# 1. 온라인 구글 시트 데이터 로드 함수 (전체 데이터)
+# 1. 온라인 구글 시트 데이터 로드 함수
 # ---------------------------------------------------------
 def load_data():
     sheet_id = "1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb"
     gid = "2007866856"
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     
-    try:
-        req = urllib.request.Request(csv_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            content = response.read()
-            
-        raw_df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig", header=None)
-    except Exception as e:
-        print(f"구글 시트 로드 중 오류 발생: {e}")
-        return pd.DataFrame()
-
     column_names = [
         "캐릭명",       # A (0)
         "진영",         # B (1)
@@ -68,16 +58,27 @@ def load_data():
         "기타"          # P (15)
     ]
 
+    try:
+        req = urllib.request.Request(csv_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            content = response.read()
+            
+        raw_df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig", header=None)
+    except Exception as e:
+        print(f"구글 시트 로드 중 오류 발생: {e}")
+        return pd.DataFrame(columns=column_names + ["통합디스크주옵션"])
+
     raw_df = raw_df.iloc[:, :len(column_names)]
     raw_df.columns = column_names
 
     processed_rows = []
     total_rows = len(raw_df)
 
+    # 6행(인덱스 5)부터 4행 단위로 끊어 읽기
     for start_idx in range(5, total_rows, 4):
         chunk = raw_df.iloc[start_idx : start_idx + 4].copy()
         if chunk.empty:
-            break
+            continue
 
         first_val = chunk.iloc[0, 0]
         if pd.isna(first_val):
@@ -105,6 +106,9 @@ def load_data():
         
         row_data["캐릭명"] = char_name
         processed_rows.append(row_data)
+
+    if not processed_rows:
+        return pd.DataFrame(columns=column_names + ["통합디스크주옵션"])
 
     final_df = pd.DataFrame(processed_rows)
     return final_df
@@ -166,8 +170,12 @@ class CategorySelect(discord.ui.Select):
         selected = self.values[0]
         
         if selected == "전체":
-            char_list = self.df["캐릭명"].tolist()
-            text_list = ", ".join(char_list)
+            if "캐릭명" in self.df.columns and not self.df.empty:
+                char_list = sorted(self.df["캐릭명"].tolist())
+                text_list = ", ".join(char_list)
+            else:
+                text_list = "등록된 캐릭터가 없어!"
+                
             embed = discord.Embed(title="📜 전체 캐릭터 목록", description=text_list, color=0x3498db)
             await interaction.response.edit_message(content="검색 가능한 전체 캐릭터 목록이야!", embed=embed, view=None)
             
@@ -180,19 +188,25 @@ class SubCategorySelect(discord.ui.Select):
         self.df = df
         self.category_type = category_type
         
-        unique_values = df[category_type].dropna().unique()
+        unique_values = df[category_type].dropna().unique() if category_type in df.columns else []
         options = []
         for val in unique_values:
             val_str = str(val).strip()
             if val_str and val_str != "-":
                 options.append(discord.SelectOption(label=val_str, value=val_str))
 
+        if not options:
+            options.append(discord.SelectOption(label="데이터 없음", value="none"))
+
         super().__init__(placeholder=f"{category_type} 선택...", min_values=1, max_values=1, options=options[:25])
 
     async def callback(self, interaction: discord.Interaction):
         selected_val = self.values[0]
+        if selected_val == "none":
+            await interaction.response.send_message("해당 카테고리에 데이터가 없어!", ephemeral=True)
+            return
+
         matched_df = self.df[self.df[self.category_type] == selected_val]
-        
         view = CharacterSelectView(matched_df)
         await interaction.response.edit_message(content=f"**[{selected_val}]** 카테고리의 캐릭터를 선택해 줘!", view=view)
 
@@ -234,11 +248,56 @@ class CharacterSelectView(discord.ui.View):
 @bot.event
 async def on_ready():
     print(f"🤖 봇 로그인 성공: {bot.user.name}")
+    
+    # 봇 상태 메세지 설정 ("에이전트 관리 중")
+    await bot.change_presence(activity=discord.Game(name="에이전트 관리 중"))
+    
     try:
         synced = await bot.tree.sync()
         print(f"✅ 동기화된 슬래시 명령어: {len(synced)}개")
     except Exception as e:
         print(f"❌ 슬래시 명령어 동기화 실패: {e}")
+
+# 슬래시 명령어 (/목록)
+@bot.tree.command(name="목록", description="세팅 정보가 등록된 전체 캐릭터 목록을 확인해!")
+async def list_slash(interaction: discord.Interaction):
+    await interaction.response.defer()
+    df = load_data()
+    
+    if df.empty or "캐릭명" not in df.columns:
+        await interaction.followup.send("❌ 등록된 캐릭터 데이터를 불러올 수 없어!")
+        return
+
+    char_list = sorted(df["캐릭명"].unique().tolist())
+    text_list = "\n".join([f"• {name}" for name in char_list])
+
+    embed = discord.Embed(
+        title="📜 등록된 캐릭터 목록",
+        description=text_list,
+        color=0x3498db
+    )
+    embed.set_footer(text=f"총 {len(char_list)}명의 캐릭터가 등록되어 있어!")
+    await interaction.followup.send(embed=embed)
+
+# 일반 명령어 (!목록)
+@bot.command(name="목록")
+async def list_prefix(ctx):
+    df = load_data()
+    
+    if df.empty or "캐릭명" not in df.columns:
+        await ctx.send("❌ 등록된 캐릭터 데이터를 불러올 수 없어!")
+        return
+
+    char_list = sorted(df["캐릭명"].unique().tolist())
+    text_list = "\n".join([f"• {name}" for name in char_list])
+
+    embed = discord.Embed(
+        title="📜 등록된 캐릭터 목록",
+        description=text_list,
+        color=0x3498db
+    )
+    embed.set_footer(text=f"총 {len(char_list)}명의 캐릭터가 등록되어 있어!")
+    await ctx.send(embed=embed)
 
 # 슬래시 명령어 (/세팅 [캐릭터])
 @bot.tree.command(name="세팅", description="젠존제 캐릭터 세팅 정보를 검색해!")
@@ -247,6 +306,12 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
     await interaction.response.defer(ephemeral=(캐릭터 is None))
     
     try:
+        df = load_data()
+        
+        if df.empty or "캐릭명" not in df.columns:
+            await interaction.followup.send("❌ 캐릭터 데이터를 로드하지 못했어!", ephemeral=True)
+            return
+
         if 캐릭터:
             search_name = 캐릭터.replace(" ", "").lower()
             
@@ -260,7 +325,6 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
                 await interaction.followup.send(f"{interaction.user.mention} 너 미래 남편\n{img_url}")
                 return
 
-            df = load_data()
             matched = df[df["캐릭명"].astype(str).str.replace(" ", "").str.lower().str.contains(search_name, na=False)]
 
             if matched.empty:
@@ -271,7 +335,6 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
             c_name, embed = create_setting_embed(row)
             await interaction.followup.send(content=f"**{c_name}** 세팅 정보를 가져왔어!", embed=embed)
         else:
-            df = load_data()
             view = CategoryView(df)
             await interaction.followup.send("원하는 카테고리를 아래 드롭다운에서 골라줘!", view=view, ephemeral=True)
 
@@ -282,6 +345,12 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
 @bot.command(name="세팅")
 async def setting_prefix(ctx, *, 캐릭터: str = None):
     try:
+        df = load_data()
+        
+        if df.empty or "캐릭명" not in df.columns:
+            await ctx.send("❌ 캐릭터 데이터를 로드하지 못했어!")
+            return
+
         if 캐릭터:
             search_name = 캐릭터.replace(" ", "").lower()
             
@@ -295,7 +364,6 @@ async def setting_prefix(ctx, *, 캐릭터: str = None):
                 await ctx.send(f"{ctx.author.mention} 너 미래 남편\n{img_url}")
                 return
 
-            df = load_data()
             matched = df[df["캐릭명"].astype(str).str.replace(" ", "").str.lower().str.contains(search_name, na=False)]
 
             if matched.empty:
@@ -306,7 +374,6 @@ async def setting_prefix(ctx, *, 캐릭터: str = None):
             c_name, embed = create_setting_embed(row)
             await ctx.send(content=f"**{c_name}** 세팅 정보를 가져왔어!", embed=embed)
         else:
-            df = load_data()
             view = CategoryView(df)
             await ctx.send("원하는 카테고리를 아래 드롭다운에서 골라줘!", view=view)
 
