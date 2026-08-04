@@ -27,7 +27,7 @@ except Exception as e:
     print(f"⚠️ JSON 파일 로드 실패: {e}")
 
 # ---------------------------------------------------------
-# 1. 온라인 구글 시트 데이터 로드 함수 (3행 1세트 데이터 및 빈 칸 보정)
+# 1. 온라인 구글 시트 데이터 로드 함수 (4행 1세트 규격에 맞춘 처리)
 # ---------------------------------------------------------
 def load_data():
     sheet_id = "1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb"
@@ -39,48 +39,82 @@ def load_data():
         with urllib.request.urlopen(req) as response:
             content = response.read()
             
-        df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig", header=1)
+        # 헤더 없이 원본 데이터 그대로 가져오기
+        raw_df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig", header=None)
     except Exception as e:
         print(f"구글 시트 로드 중 오류 발생: {e}")
         return pd.DataFrame()
 
-    # 컬럼명 공백 및 줄바꿈 제거
-    df.columns = [str(col).replace("\n", "").replace(" ", "").strip() for col in df.columns]
+    # 1~5행(인덱스 0~4) 제거하고 6행(인덱스 5)부터 데이터로 사용
+    data_df = raw_df.iloc[5:].reset_index(drop=True)
 
-    # 캐릭명/진영 채우기 (빈 행을 위 캐릭터 이름으로 채움)
-    if "캐릭명" in df.columns:
-        df["캐릭명"] = df["캐릭명"].ffill()
+    # A~P열 컬럼명 수동 지정
+    column_names = [
+        "캐릭명",       # A (0)
+        "진영",         # B (1)
+        "특성",         # C (2)
+        "스킬레벨",     # D (3)
+        "포지션",       # E (4)
+        "W-엔진",       # F (5)
+        "4세트",        # G (6)
+        "2세트",        # H (7)
+        "disc_4",       # I (8)
+        "disc_5",       # J (9)
+        "disc_6",       # K (10)
+        "유효부옵션",   # L (11)
+        "핵심돌파",     # M (12)
+        "주옵",         # N (13)
+        "치명타",       # O (14)
+        "기타"          # P (15)
+    ]
+    
+    # 가져온 데이터의 열 개수에 맞게 컬럼 할당
+    data_df = data_df.iloc[:, :len(column_names)]
+    data_df.columns = column_names
 
-    if "진영" in df.columns:
-        df["진영"] = df["진영"].ffill()
+    # 빈 문자열 및 'nan'을 실제 None으로 변환
+    data_df = data_df.replace(["nan", "None", "", "NaN"], None)
 
-    # 다른 캐릭터의 값이 빈 칸으로 넘어가 채워지는 현상을 방지하기 위해 
-    # 캐릭터별 그룹(groupby)을 지정하여 ffill을 수행
-    fill_targets = ["특성", "포지션", "W-엔진", "4세트", "2세트", "디스크주옵션", "유효부옵션", "핵심돌파", "주옵", "치명타", "기타"]
-    for target in fill_targets:
-        if target in df.columns:
-            df[target] = df.groupby("캐릭명")[target].ffill()
+    # ---------------------------------------------------------
+    # 4행 1세트 데이터 채우기 보정 (캐릭터 단위 묶음 처리)
+    # ---------------------------------------------------------
+    processed_rows = []
+    
+    # 4행씩 슬라이싱하여 하나의 캐릭터 블록으로 처리
+    for i in range(0, len(data_df), 4):
+        chunk = data_df.iloc[i:i+4].copy()
+        
+        # 첫 번째 행의 캐릭명이 없으면 스킵
+        c_name = chunk["캐릭명"].dropna().values
+        if len(c_name) == 0 or str(c_name[0]).strip() == "":
+            continue
+            
+        char_name = str(c_name[0]).strip()
 
-    skill_col = [c for c in df.columns if "스킬" in c]
-    if skill_col:
-        df.rename(columns={skill_col[0]: "스킬레벨"}, inplace=True)
+        # 4행 안에서 각 컬럼의 유효한 값(None이 아닌 첫 값 또는 줄바꿈 연결)을 추출
+        row_data = {}
+        for col in column_names:
+            valid_vals = chunk[col].dropna().astype(str).str.strip()
+            valid_vals = [v for v in valid_vals if v not in ["", "nan", "None", "-"]]
+            
+            if col in ["disc_4", "disc_5", "disc_6"]:
+                row_data[col] = valid_vals[0] if valid_vals else "-"
+            elif col in ["W-엔진", "기타", "유효부옵션"]:
+                # 여러 행에 나뉘어 적혀있을 수 있는 필드는 줄바꿈으로 합침
+                row_data[col] = "\n".join(valid_vals) if valid_vals else "-"
+            else:
+                row_data[col] = valid_vals[0] if valid_vals else "-"
 
-    # 디스크 4, 5, 6번 주옵션 통합
-    unnamed_cols = [c for c in df.columns if "Unnamed" in c]
-    for idx, row in df.iterrows():
-        mains = []
-        if pd.notna(row.get("디스크주옵션")) and str(row.get("디스크주옵션")).strip() not in ["", "nan", "None"]:
-            mains.append(str(row["디스크주옵션"]).replace("\n", " ").strip())
-        for u_col in unnamed_cols:
-            if pd.notna(row.get(u_col)) and str(row.get(u_col)).strip() not in ["", "nan", "None"]:
-                mains.append(str(row[u_col]).replace("\n", " ").strip())
-        df.at[idx, "통합디스크주옵션"] = " / ".join(mains) if mains else "-"
+        # 디스크 4/5/6번 주옵션 하나로 합치기
+        mains = [row_data["disc_4"], row_data["disc_5"], row_data["disc_6"]]
+        mains = [m for m in mains if m != "-"]
+        row_data["통합디스크주옵션"] = " / ".join(mains) if mains else "-"
+        
+        row_data["캐릭명"] = char_name
+        processed_rows.append(row_data)
 
-    for col in df.columns:
-        if df[col].dtype == 'object':
-            df[col] = df[col].astype(str).str.strip()
-
-    return df
+    final_df = pd.DataFrame(processed_rows)
+    return final_df
 
 # ---------------------------------------------------------
 # 2. 임베드 생성 함수 (커스텀 이미지 적용)
