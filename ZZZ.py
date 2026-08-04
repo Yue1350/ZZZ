@@ -262,7 +262,7 @@ def load_char_english():
     return {}
 
 # ---------------------------------------------------------
-# 4. Danbooru API 기반 일러스트 검색 함수 (인증 토큰 불필요)
+# 4. Danbooru API 기반 일러스트 검색 함수 (403 에러 우회 적용)
 # ---------------------------------------------------------
 def fetch_character_image(character_query: str):
     clean_query = character_query.strip().replace(" ", "_").lower()
@@ -274,22 +274,25 @@ def fetch_character_image(character_query: str):
     else:
         search_tag = clean_query
 
-    # Danbooru API 검색 (일반 등급 rating:g 지정)
+    # 검색어 URL 인코딩
     encoded_tag = urllib.parse.quote(search_tag)
     search_url = f"https://danbooru.donmai.us/posts.json?tags={encoded_tag}+zenless_zone_zero+rating:g&limit=25"
 
+    # Danbooru 403 차단 방지를 위한 크롬 브라우저 헤더 설정
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01"
+    }
+
     try:
-        req = urllib.request.Request(
-            search_url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        )
+        req = urllib.request.Request(search_url, headers=headers)
         with urllib.request.urlopen(req, timeout=10) as response:
             data = json.loads(response.read().decode("utf-8"))
 
         # 젠존제 태그 조합 실패 시 캐릭터 태그 단독 검색
         if not data:
             retry_url = f"https://danbooru.donmai.us/posts.json?tags={encoded_tag}+rating:g&limit=25"
-            req = urllib.request.Request(retry_url, headers={"User-Agent": "Mozilla/5.0"})
+            req = urllib.request.Request(retry_url, headers=headers)
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
 
@@ -316,6 +319,9 @@ def fetch_character_image(character_query: str):
 
         return True, embed, None
 
+    except urllib.error.HTTPError as e:
+        print(f"HTTP Error 발생: {e.code} - {e.reason}")
+        return False, f"⚠️ 이미지 서버 접속이 차단되었어 (HTTP {e.code}). 잠시 후 다시 시도해 줘!", None
     except Exception as e:
         print(f"이미지 검색 중 오류 발생: {e}")
         return False, f"⚠️ 이미지를 불러오는 중 오류가 발생했어: {e}", None
