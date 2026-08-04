@@ -264,79 +264,57 @@ def load_char_english():
 
 
 # ---------------------------------------------------------
-# 4. 이미지 검색 통합 로직 (Gelbooru -> Safebooru 자동 우회)
+# 4. 픽시브 전용 일러스트 검색 로직
 # ---------------------------------------------------------
 def fetch_pixiv_image(character_query: str):
     try:
         clean_query = character_query.strip().replace(" ", "").lower()
         char_tag_map = load_char_english()
 
-        # 1. 한글 태그 매핑
+        # 1. 캐릭터 영문 태그 변환
         if clean_query in char_tag_map:
             tag = char_tag_map[clean_query]
         else:
             tag = character_query.strip().replace(" ", "_").lower()
 
-        context = ssl._create_unverified_context()
+        # Danbooru API를 활용해 픽시브 원본 일러스트만 필터링 (pixiv 태그 + rating:g)
+        full_tags = f"{tag} zenless_zone_zero rating:g"
+        encoded_tags = urllib.parse.quote(full_tags)
+
+        search_url = (
+            f"https://danbooru.donmai.us/posts.json?limit=50&tags={encoded_tags}"
+        )
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
+        req = urllib.request.Request(search_url, headers=headers)
+        context = ssl._create_unverified_context()
 
         data = []
-        source_name = "Gelbooru"
-
-        # -----------------------------------------------------
-        # [시도 1] Gelbooru API
-        # -----------------------------------------------------
         try:
-            full_tags = f"{tag} zenless_zone_zero rating:general"
-            encoded_tags = urllib.parse.quote(full_tags)
-            gb_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={encoded_tags}"
-
-            req = urllib.request.Request(gb_url, headers=headers)
             with urllib.request.urlopen(req, context=context) as response:
                 res_text = response.read().decode("utf-8").strip()
                 if res_text:
-                    res_json = json.loads(res_text)
-                    data = res_json.get("post", [])
+                    data = json.loads(res_text)
         except Exception as e:
-            print(f"Gelbooru 요청 실패 ({e}), Safebooru로 우회 시도...")
-            data = []
+            print(f"1차 검색 오류: {e}")
 
-        # -----------------------------------------------------
-        # [시도 2] Gelbooru 실패/429 시 Safebooru API로 자동 전환
-        # -----------------------------------------------------
+        # 2. 젠존제 태그 검색 결과가 없으면 캐릭터 단독 검색
         if not data:
-            source_name = "Safebooru"
+            fallback_tags = urllib.parse.quote(f"{tag} rating:g")
+            fallback_url = f"https://danbooru.donmai.us/posts.json?limit=50&tags={fallback_tags}"
+            req_fb = urllib.request.Request(fallback_url, headers=headers)
+
             try:
-                sb_tags = urllib.parse.quote(f"{tag} zenless_zone_zero")
-                sb_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={sb_tags}"
-
-                req_sb = urllib.request.Request(sb_url, headers=headers)
-                with urllib.request.urlopen(req_sb, context=context) as resp_sb:
-                    res_text_sb = resp_sb.read().decode("utf-8").strip()
-                    if res_text_sb:
-                        data = json.loads(res_text_sb)
-            except Exception as e:
-                print(f"Safebooru 1차 요청 실패: {e}")
-                data = []
-
-        # -----------------------------------------------------
-        # [시도 3] 젠존제 태그 제외 단독 검색 (최후의 보루)
-        # -----------------------------------------------------
-        if not data:
-            try:
-                sb_fallback_tags = urllib.parse.quote(tag)
-                sb_fb_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={sb_fallback_tags}"
-
-                req_fb = urllib.request.Request(sb_fb_url, headers=headers)
-                with urllib.request.urlopen(req_fb, context=context) as resp_fb:
+                with urllib.request.urlopen(
+                    req_fb, context=context
+                ) as resp_fb:
                     res_text_fb = resp_fb.read().decode("utf-8").strip()
                     if res_text_fb:
                         data = json.loads(res_text_fb)
             except Exception as e:
-                print(f"Safebooru 단독 태그 요청 실패: {e}")
-                data = []
+                print(f"2차 검색 오류: {e}")
 
         if not data:
             return (
@@ -346,28 +324,42 @@ def fetch_pixiv_image(character_query: str):
                 None,
             )
 
-        # -----------------------------------------------------
-        # 결과 임베드 생성
-        # -----------------------------------------------------
-        selected = random.choice(data)
+        # 3. 픽시브 출처(pixiv_id)가 포함된 일러스트 필터링
+        pixiv_posts = [
+            p
+            for p in data
+            if p.get("pixiv_id") or "pixiv.net" in str(p.get("source", ""))
+        ]
 
-        if source_name == "Gelbooru":
-            image_url = selected.get("file_url")
-            post_id = selected.get("id")
-            post_url = (
-                f"https://gelbooru.com/index.php?page=post&s=view&id={post_id}"
-            )
-        else:  # Safebooru
-            image_url = f"https://safebooru.org/images/{selected['directory']}/{selected['image']}"
-            post_url = f"https://safebooru.org/index.php?page=post&s=view&id={selected['id']}"
+        # 픽시브 출처 게시글이 없으면 전체 결과 중 선택
+        selected = (
+            random.choice(pixiv_posts)
+            if pixiv_posts
+            else random.choice(data)
+        )
+
+        image_url = selected.get("file_url") or selected.get("large_file_url")
+        pixiv_id = selected.get("pixiv_id")
+
+        # 픽시브 링크 생성
+        if pixiv_id:
+            pixiv_url = f"https://www.pixiv.net/artworks/{pixiv_id}"
+        else:
+            pixiv_url = selected.get("source") or "https://www.pixiv.net"
 
         embed = discord.Embed(
-            title=f"🎨 {character_query} 일러스트",
-            url=post_url,
+            title=f"🎨 {character_query} 픽시브 일러스트",
+            url=pixiv_url,
             color=0x0096FA,
         )
-        embed.set_image(url=image_url)
-        embed.set_footer(text=f"{source_name} Search • Tag: {tag}")
+
+        if image_url:
+            embed.set_image(url=image_url)
+
+        embed.set_footer(
+            text=f"Pixiv Artwork • Tag: {tag}",
+            icon_url="https://www.pixiv.net/favicon.ico",
+        )
 
         return True, embed, None, None
 
