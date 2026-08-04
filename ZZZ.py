@@ -264,7 +264,7 @@ def load_char_english():
 
 
 # ---------------------------------------------------------
-# 4. Safebooru 이미지 검색 공통 로직 함수 (JSON 연동)
+# 4. Safebooru 이미지 검색 공통 로직 함수 (JSON 파싱 에러 방지 처리)
 # ---------------------------------------------------------
 def fetch_pixiv_image(character_query: str):
     try:
@@ -289,15 +289,27 @@ def fetch_pixiv_image(character_query: str):
         req = urllib.request.Request(search_url, headers=headers)
         context = ssl._create_unverified_context()
 
+        data = []
         with urllib.request.urlopen(req, context=context) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            res_text = response.read().decode("utf-8").strip()
+            # 응답 내용이 존재하는 경우에만 JSON 파싱
+            if res_text:
+                try:
+                    data = json.loads(res_text)
+                except json.JSONDecodeError:
+                    data = []
 
         # 2. 젠존제 태그 검색 결과가 없으면 캐릭터 태그 단독으로 재시도
         if not data:
             fallback_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={encoded_tag}"
             req_fb = urllib.request.Request(fallback_url, headers=headers)
             with urllib.request.urlopen(req_fb, context=context) as response_fb:
-                data = json.loads(response_fb.read().decode("utf-8"))
+                res_text_fb = response_fb.read().decode("utf-8").strip()
+                if res_text_fb:
+                    try:
+                        data = json.loads(res_text_fb)
+                    except json.JSONDecodeError:
+                        data = []
 
         if not data:
             return (
