@@ -1,4 +1,4 @@
-import os, io, json, ssl, urllib.request, discord, urllib.parse, random, pandas as pd
+import os, io, json, ssl, urllib.request, discord, urllib.parse, urllib.error, random, pandas as pd
 from discord.ext import commands
 from discord import app_commands
 from keep_alive import keep_alive
@@ -264,7 +264,7 @@ def load_char_english():
 
 
 # ---------------------------------------------------------
-# 4. Gelbooru 이미지 검색 공통 로직 함수 (젠존제 태그 조합)
+# 4. Gelbooru 이미지 검색 공통 로직 함수 (429 에러 차단 방지 적용)
 # ---------------------------------------------------------
 def fetch_pixiv_image(character_query: str):
     try:
@@ -273,33 +273,44 @@ def fetch_pixiv_image(character_query: str):
         # JSON 데이터 로드
         char_tag_map = load_char_english()
 
-        # 1. 한글 매핑 사전에 있는지 확인 -> 있으면 영문 태그 사용, 없으면 입력값 사용
+        # 1. 한글 매핑 사전에 있는지 확인
         if clean_query in char_tag_map:
             tag = char_tag_map[clean_query]
         else:
             tag = character_query.strip().replace(" ", "_").lower()
 
-        # 캐릭터 태그와 젠레스 존 제로 태그 조합
+        # 캐릭터 태그 + 젠존제 태그 조합
         full_tags = f"{tag} zenless_zone_zero rating:general"
         encoded_tags = urllib.parse.quote(full_tags)
 
-        # Gelbooru API URL 생성
         search_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={encoded_tags}"
 
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        # Gelbooru 차단 방지를 위한 커스텀 User-Agent 설정
+        headers = {
+            "User-Agent": "ZZZDiscordBot/1.0 (MyDiscordBot/Contact@example.com)"
+        }
         req = urllib.request.Request(search_url, headers=headers)
         context = ssl._create_unverified_context()
 
         data = []
-        with urllib.request.urlopen(req, context=context) as response:
-            res_text = response.read().decode("utf-8").strip()
-            if res_text:
-                try:
-                    res_json = json.loads(res_text)
-                    # Gelbooru는 {"post": [...]} 형태로 응답
-                    data = res_json.get("post", [])
-                except json.JSONDecodeError:
-                    data = []
+        try:
+            with urllib.request.urlopen(req, context=context) as response:
+                res_text = response.read().decode("utf-8").strip()
+                if res_text:
+                    try:
+                        res_json = json.loads(res_text)
+                        data = res_json.get("post", [])
+                    except json.JSONDecodeError:
+                        data = []
+        except urllib.error.HTTPError as http_e:
+            if http_e.code == 429:
+                return (
+                    False,
+                    "⚠️ Gelbooru 서버 요청 제한(429)에 걸렸어! 잠시 후 다시 시도해 줘.",
+                    None,
+                    None,
+                )
+            raise http_e
 
         # 2. 젠존제 태그 검색 결과가 없으면 캐릭터 태그 단독으로 재시도
         if not data:
@@ -307,14 +318,26 @@ def fetch_pixiv_image(character_query: str):
             fallback_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={fallback_tags}"
             req_fb = urllib.request.Request(fallback_url, headers=headers)
 
-            with urllib.request.urlopen(req_fb, context=context) as response_fb:
-                res_text_fb = response_fb.read().decode("utf-8").strip()
-                if res_text_fb:
-                    try:
-                        res_json_fb = json.loads(res_text_fb)
-                        data = res_json_fb.get("post", [])
-                    except json.JSONDecodeError:
-                        data = []
+            try:
+                with urllib.request.urlopen(
+                    req_fb, context=context
+                ) as response_fb:
+                    res_text_fb = response_fb.read().decode("utf-8").strip()
+                    if res_text_fb:
+                        try:
+                            res_json_fb = json.loads(res_text_fb)
+                            data = res_json_fb.get("post", [])
+                        except json.JSONDecodeError:
+                            data = []
+            except urllib.error.HTTPError as http_e:
+                if http_e.code == 429:
+                    return (
+                        False,
+                        "⚠️ Gelbooru 서버 요청 제한(429)에 걸렸어! 잠시 후 다시 시도해 줘.",
+                        None,
+                        None,
+                    )
+                raise http_e
 
         if not data:
             return (
@@ -328,7 +351,9 @@ def fetch_pixiv_image(character_query: str):
         selected = random.choice(data)
         image_url = selected.get("file_url")
         post_id = selected.get("id")
-        post_url = f"https://gelbooru.com/index.php?page=post&s=view&id={post_id}"
+        post_url = (
+            f"https://gelbooru.com/index.php?page=post&s=view&id={post_id}"
+        )
 
         embed = discord.Embed(
             title=f"🎨 {character_query} 일러스트",
@@ -343,7 +368,6 @@ def fetch_pixiv_image(character_query: str):
     except Exception as e:
         print(f"이미지 연동 오류: {e}")
         return False, f"⚠️ 이미지를 가져오는 중 오류가 발생했어: {e}", None, None
-
 # ---------------------------------------------------------
 # 5. 디스코드 이벤트 및 명령어
 # ---------------------------------------------------------
