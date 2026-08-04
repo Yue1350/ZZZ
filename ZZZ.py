@@ -247,59 +247,48 @@ class CharacterSelectView(discord.ui.View):
         self.add_item(CharacterSelect(matched_df))
 
 # ---------------------------------------------------------
-# 4. 픽시브 크롤링/검색 공통 로직 함수
+# 4. Safebooru 이미지 검색 공통 로직 함수 (Pixiv 대체)
 # ---------------------------------------------------------
 def fetch_pixiv_image(character_query: str):
-    refresh_token = os.environ.get("PIXIV_REFRESH_TOKEN")
-    if not refresh_token:
-        return False, "❌ `PIXIV_REFRESH_TOKEN` 환경 변수가 설정되어 있지 않아!", None, None
-
     try:
-        aapi = AppPixivAPI()
-        aapi.auth(refresh_token=refresh_token)
+        # 태그 가공 (공백은 언더바로 변경, 젠존제 태그 자동 추가)
+        tag = character_query.strip().replace(" ", "_").lower()
+        search_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={tag}+zenless_zone_zero"
 
-        # 젠존제 관련 태그 결합 검색
-        search_query = f"{character_query} (젠레스 존 제로 OR ZZZ)"
-        json_result = aapi.search_illust(search_query, search_target='partial_match_for_tags')
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        req = urllib.request.Request(search_url, headers=headers)
+        context = ssl._create_unverified_context()
 
-        illusts = json_result.illusts
-        if not illusts:
-            # 기본 검색어로 재시도
-            json_result = aapi.search_illust(character_query, search_target='partial_match_for_tags')
-            illusts = json_result.illusts
+        with urllib.request.urlopen(req, context=context) as response:
+            data = json.loads(response.read().decode('utf-8'))
 
-        if not illusts:
-            return False, f"❌ 픽시브에서 **{character_query}** 관련 이미지를 찾지 못했어!", None, None
+        if not data:
+            # 젠존제 태그 없이 캐릭터명으로 재시도
+            fallback_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={tag}"
+            req_fb = urllib.request.Request(fallback_url, headers=headers)
+            with urllib.request.urlopen(req_fb, context=context) as response_fb:
+                data = json.loads(response_fb.read().decode('utf-8'))
 
-        # 일러스트 랜덤 선택
-        selected_illust = random.choice(illusts)
-        image_url = selected_illust.image_urls.large
-        title = selected_illust.title
-        author = selected_illust.user.name
-        illust_id = selected_illust.id
+        if not data:
+            return False, f"❌ **{character_query}** 관련 이미지를 찾지 못했어!", None, None
 
-        # Referer 헤더 우회 설정 및 이미지 다운로드
-        headers = {'Referer': 'https://www.pixiv.net/'}
-        req = urllib.request.Request(image_url, headers=headers)
-        
-        with urllib.request.urlopen(req) as resp:
-            image_bytes = resp.read()
-
-        file = discord.File(fp=io.BytesIO(image_bytes), filename=f"pixiv_{illust_id}.png")
+        # 결과 중 랜덤 1개 선택
+        selected = random.choice(data)
+        image_url = f"https://safebooru.org/images/{selected['directory']}/{selected['image']}"
+        post_url = f"https://safebooru.org/index.php?page=post&s=view&id={selected['id']}"
 
         embed = discord.Embed(
-            title=f"🎨 {title}",
-            url=f"https://www.pixiv.net/artworks/{illust_id}",
+            title=f"🎨 {character_query} 일러스트",
+            url=post_url,
             color=0x0096fa
         )
-        embed.add_field(name="작가", value=author, inline=True)
-        embed.set_image(url=f"attachment://pixiv_{illust_id}.png")
-        embed.set_footer(text="Pixiv Image Search")
+        embed.set_image(url=image_url)
+        embed.set_footer(text="Safebooru Image Search")
 
-        return True, embed, file, None
+        return True, embed, None, None
 
     except Exception as e:
-        print(f"픽시브 연동 오류: {e}")
+        print(f"이미지 연동 오류: {e}")
         return False, f"⚠️ 이미지를 가져오는 중 오류가 발생했어: {e}", None, None
 
 # ---------------------------------------------------------
