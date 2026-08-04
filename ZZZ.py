@@ -477,27 +477,24 @@ async def setting_prefix(ctx, *, 캐릭터: str = None):
         await ctx.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}")
 
 # 슬래시 명령어 (/사진 [캐릭터])
-@bot.tree.command(name="사진", description="픽시브에서 캐릭터의 일러스트를 랜덤으로 검색해서 가져와!")
+@bot.tree.command(
+    name="사진",
+    description="픽시브/Safebooru에서 캐릭터의 일러스트를 랜덤으로 검색해서 가져와!",
+)
 @app_commands.describe(캐릭터="검색할 캐릭터 이름을 입력해줘")
 async def photo_slash(interaction: discord.Interaction, 캐릭터: str):
     await interaction.response.defer()
     success, res_embed, res_file, _ = fetch_pixiv_image(캐릭터)
-    
-    if success:
-        await interaction.followup.send(embed=res_embed, file=res_file)
-    else:
-        await interaction.followup.send(content=res_embed)
 
-# 일반 명령어 (!사진 [캐릭터])
-@bot.command(name="사진")
-async def photo_prefix(ctx, *, 캐릭터: str):
-    async with ctx.typing():
-        success, res_embed, res_file, _ = fetch_pixiv_image(캐릭터)
-        
-        if success:
-            await ctx.send(embed=res_embed, file=res_file)
+    if success:
+        # res_file이 있을 때만 file 매개변수 전달
+        if res_file:
+            await interaction.followup.send(embed=res_embed, file=res_file)
         else:
-            await ctx.send(content=res_embed)
+            await interaction.followup.send(embed=res_embed)
+    else:
+        # 실패 시 에러 메시지(문자열) 전송
+        await interaction.followup.send(content=res_embed)
 
 # ---------------------------------------------------------
 # 봇 실행
