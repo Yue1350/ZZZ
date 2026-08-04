@@ -26,14 +26,13 @@ def load_char_images():
         try:
             with open("char_images.json", "r", encoding="utf-8") as f:
                 data = json.load(f)
-                # 키(캐릭터명) 앞뒤 공백 제거 정리
                 return {str(k).strip(): str(v).strip() for k, v in data.items()}
         except Exception as e:
             print(f"JSON 로드 중 오류 발생: {e}")
     return {}
 
 # ---------------------------------------------------------
-# 1. 온라인 구글 시트 데이터 로드 함수
+# 1. 온라인 구글 시트 데이터 로드 함수 (캐릭터 블록 분리 강화)
 # ---------------------------------------------------------
 def load_data():
     sheet_id = "1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb"
@@ -72,11 +71,15 @@ def load_data():
     raw_df = raw_df.iloc[:, :len(column_names)]
     raw_df.columns = column_names
 
+    # A열에서 캐릭터 시작 위치(인덱스) 찾아내기
     all_indices = []
+    ignore_words = ["캐릭명", "캐릭터", "캐릭터명", "nan", "none", "-", "이름", "null", ""]
+    
     for idx, val in enumerate(raw_df.iloc[:, 0]):
         if pd.notna(val):
             val_str = str(val).strip()
-            if val_str and val_str not in ["캐릭명", "캐릭터", "캐릭터명", "nan", "None", "-", "이름"]:
+            # 헤더 명칭이나 무효 문자열이 아니면 전부 새로운 캐릭터 시작점으로 인식
+            if val_str.lower() not in ignore_words:
                 all_indices.append(idx)
 
     if not all_indices:
@@ -84,6 +87,7 @@ def load_data():
 
     processed_rows = []
 
+    # 캐릭터 단위로 블록 슬라이싱
     for i, start_idx in enumerate(all_indices):
         end_idx = all_indices[i+1] if i + 1 < len(all_indices) else len(raw_df)
         chunk = raw_df.iloc[start_idx:end_idx].copy()
@@ -93,7 +97,7 @@ def load_data():
         row_data = {}
         for col in column_names:
             valid_vals = chunk[col].dropna().astype(str).str.strip()
-            valid_vals = [v for v in valid_vals if v not in ["", "nan", "None", "-", "NaN"]]
+            valid_vals = [v for v in valid_vals if v.lower() not in ignore_words and v != "nan"]
             
             if col in ["disc_4", "disc_5", "disc_6"]:
                 row_data[col] = valid_vals[0] if valid_vals else "-"
@@ -113,12 +117,11 @@ def load_data():
     return final_df
 
 # ---------------------------------------------------------
-# 2. 임베드 생성 함수 (사진 매칭 보완)
+# 2. 임베드 생성 함수
 # ---------------------------------------------------------
 def create_setting_embed(row):
     char_name = str(row["캐릭명"]).strip()
     
-    # JSON 파일에서 이미지 URL 불러오기
     char_images = load_char_images()
     image_url = char_images.get(char_name, None)
 
@@ -127,7 +130,6 @@ def create_setting_embed(row):
         color=0x00ff00
     )
 
-    # image_url 유효성 체크 후 썸네일 설정
     if image_url and (image_url.startswith("http://") or image_url.startswith("https://")):
         embed.set_thumbnail(url=image_url)
 
@@ -249,39 +251,41 @@ async def on_ready():
 @bot.tree.command(name="세팅", description="젠존제 캐릭터 세팅 정보를 검색해!")
 @app_commands.describe(캐릭터="검색할 캐릭터 이름을 입력해줘 (선택 사항)")
 async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None):
+    await interaction.response.defer(ephemeral=(캐릭터 is None))
+    
     try:
         if 캐릭터:
             search_name = 캐릭터.replace(" ", "").lower()
             
             # 예외 처리 1: '배연우'
             if search_name == "배연우":
-                await interaction.response.send_message(f"{interaction.user.mention} 너 배연우")
+                await interaction.followup.send(f"{interaction.user.mention} 너 배연우")
                 return
 
             # 예외 처리 2: '베리나'
             if search_name == "베리나":
                 images = load_char_images()
                 img_url = images.get("베리나", "https://i.namu.wiki/i/eACVAos4WR6IB2Y1AlVn8qXnKlzxYWTsR6AULHvS9w-bbhphy1X4_iszgM8zdCRhSA0zfvvZpqNRIluNxNauxw.webp")
-                await interaction.response.send_message(f"{interaction.user.mention} 너 미래 남편\n{img_url}")
+                await interaction.followup.send(f"{interaction.user.mention} 너 미래 남편\n{img_url}")
                 return
 
             df = load_data()
             matched = df[df["캐릭명"].astype(str).str.replace(" ", "").str.lower().str.contains(search_name, na=False)]
 
             if matched.empty:
-                await interaction.response.send_message(f"❌ **{캐릭터}** 캐릭터 정보를 찾을 수 없어!", ephemeral=True)
+                await interaction.followup.send(f"❌ **{캐릭터}** 캐릭터 정보를 찾을 수 없어!", ephemeral=True)
                 return
 
             row = matched.iloc[0]
             c_name, embed = create_setting_embed(row)
-            await interaction.response.send_message(content=f"**{c_name}** 세팅 정보를 가져왔어!", embed=embed)
+            await interaction.followup.send(content=f"**{c_name}** 세팅 정보를 가져왔어!", embed=embed)
         else:
             df = load_data()
             view = CategoryView(df)
-            await interaction.response.send_message("원하는 카테고리를 아래 드롭다운에서 골라줘!", view=view, ephemeral=True)
+            await interaction.followup.send("원하는 카테고리를 아래 드롭다운에서 골라줘!", view=view, ephemeral=True)
 
     except Exception as e:
-        await interaction.response.send_message(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
+        await interaction.followup.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
 
 # 일반 명령어 (!세팅 [캐릭터])
 @bot.command(name="세팅")
