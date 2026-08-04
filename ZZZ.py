@@ -32,7 +32,7 @@ def load_char_images():
     return {}
 
 # ---------------------------------------------------------
-# 1. 온라인 구글 시트 데이터 로드 함수 (캐릭터 블록 분리 강화)
+# 1. 온라인 구글 시트 데이터 로드 함수
 # ---------------------------------------------------------
 def load_data():
     sheet_id = "1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb"
@@ -78,7 +78,6 @@ def load_data():
     for idx, val in enumerate(raw_df.iloc[:, 0]):
         if pd.notna(val):
             val_str = str(val).strip()
-            # 헤더 명칭이나 무효 문자열이 아니면 전부 새로운 캐릭터 시작점으로 인식
             if val_str.lower() not in ignore_words:
                 all_indices.append(idx)
 
@@ -87,7 +86,6 @@ def load_data():
 
     processed_rows = []
 
-    # 캐릭터 단위로 블록 슬라이싱
     for i, start_idx in enumerate(all_indices):
         end_idx = all_indices[i+1] if i + 1 < len(all_indices) else len(raw_df)
         chunk = raw_df.iloc[start_idx:end_idx].copy()
@@ -251,6 +249,7 @@ async def on_ready():
 @bot.tree.command(name="세팅", description="젠존제 캐릭터 세팅 정보를 검색해!")
 @app_commands.describe(캐릭터="검색할 캐릭터 이름을 입력해줘 (선택 사항)")
 async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None):
+    # 응답 대기 상태 설정
     await interaction.response.defer(ephemeral=(캐릭터 is None))
     
     try:
@@ -285,6 +284,7 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
             await interaction.followup.send("원하는 카테고리를 아래 드롭다운에서 골라줘!", view=view, ephemeral=True)
 
     except Exception as e:
+        # defer() 상태에서의 오류 전송은 followup으로 처리해야 함!
         await interaction.followup.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
 
 # 일반 명령어 (!세팅 [캐릭터])
