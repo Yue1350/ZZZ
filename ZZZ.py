@@ -5,17 +5,12 @@ from keep_alive import keep_alive
 
 keep_alive()
 
-# ---------------------------------------------------------
-# 봇 기본 설정
-# ---------------------------------------------------------
 intents = discord.Intents.default()
 intents.message_content = True
+intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ---------------------------------------------------------
-# 캐릭터 이미지 JSON 로드 함수
-# ---------------------------------------------------------
 def load_char_images():
     if os.path.exists("char_images.json"):
         try:
@@ -26,31 +21,28 @@ def load_char_images():
             print(f"JSON 로드 중 오류 발생: {e}")
     return {}
 
-# ---------------------------------------------------------
-# 1. 온라인 구글 시트 데이터 로드 함수 (4행 1세트 전용 로직)
-# ---------------------------------------------------------
 def load_data():
     sheet_id = "1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb"
     gid = "2007866856"
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     
     column_names = [
-        "캐릭명",       # A (0)
-        "진영",         # B (1)
-        "특성",         # C (2)
-        "스킬레벨",     # D (3)
-        "포지션",       # E (4)
-        "W-엔진",       # F (5)
-        "4세트",        # G (6)
-        "2세트",        # H (7)
-        "disc_4",       # I (8)
-        "disc_5",       # J (9)
-        "disc_6",       # K (10)
-        "유효부옵션",   # L (11)
-        "핵심돌파",     # M (12)
-        "주옵",         # N (13)
-        "치명타",       # O (14)
-        "기타"          # P (15)
+        "캐릭명",
+        "진영",
+        "특성",
+        "스킬레벨",
+        "포지션",
+        "W-엔진",
+        "4세트",
+        "2세트",
+        "disc_4",
+        "disc_5",
+        "disc_6",
+        "유효부옵션",
+        "핵심돌파",
+        "주옵",
+        "치명타",
+        "기타"
     ]
 
     try:
@@ -74,13 +66,11 @@ def load_data():
     processed_rows = []
     total_rows = len(raw_df)
 
-    # 6행(인덱스 5)부터 4행 단위로 묶기 (6~9행, 10~13행 ...)
     for start_idx in range(5, total_rows, 4):
         chunk = raw_df.iloc[start_idx : start_idx + 4].copy()
-        if len(chunk) < 4:  # 4행이 채워지지 않는 짜투리 행은 스킵
+        if len(chunk) < 4:
             continue
 
-        # 세트의 가장 아랫줄(4번째 행, 인덱스 -1) A열에서 캐릭터명 추출
         last_val = chunk.iloc[-1, 0]
         if pd.isna(last_val):
             continue
@@ -116,9 +106,6 @@ def load_data():
     print(f"✅ [디버그] 파싱 성공! 총 {len(final_df)}명의 캐릭터가 정상 로드됐어!")
     return final_df
 
-# ---------------------------------------------------------
-# 2. 임베드 생성 함수
-# ---------------------------------------------------------
 def create_setting_embed(row):
     char_name = str(row["캐릭명"]).strip()
     
@@ -155,9 +142,6 @@ def create_setting_embed(row):
     embed.set_footer(text="젠존제 세팅 정보 봇")
     return char_name, embed
 
-# ---------------------------------------------------------
-# 3. 카테고리 드롭다운 UI 클래스
-# ---------------------------------------------------------
 class CategorySelect(discord.ui.Select):
     def __init__(self, df):
         self.df = df
@@ -245,19 +229,14 @@ class CharacterSelectView(discord.ui.View):
         super().__init__(timeout=60)
         self.add_item(CharacterSelect(matched_df))
 
-# ---------------------------------------------------------
-# 4. 젠레스 존 제로 전용 랜덤 일러스트 가져오기 함수
-# ---------------------------------------------------------
 def fetch_random_zzz_image():
     zzz_tag = urllib.parse.quote("zenless_zone_zero")
-    # 다양성을 위해 무작위 페이지(1~5페이지) 선택
     random_page = random.randint(1, 5)
     
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-    # [1차 시도] Danbooru API
-    danbooru_url = f"https://danbooru.donmai.us/posts.json?tags={zzz_tag}+rating:g&limit=50&page={random_page}"
     try:
+        danbooru_url = f"https://danbooru.donmai.us/posts.json?tags={zzz_tag}+rating:g&limit=50&page={random_page}"
         req = urllib.request.Request(danbooru_url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
@@ -274,9 +253,8 @@ def fetch_random_zzz_image():
     except Exception as e:
         print(f"Danbooru 패스: {e}")
 
-    # [2차 시도] Gelbooru API
-    gelbooru_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&tags={zzz_tag}+rating:general&limit=50&pid={random_page}"
     try:
+        gelbooru_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&tags={zzz_tag}+rating:general&limit=50&pid={random_page}"
         req = urllib.request.Request(gelbooru_url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
             res_text = response.read().decode("utf-8")
@@ -293,9 +271,8 @@ def fetch_random_zzz_image():
     except Exception as e:
         print(f"Gelbooru 패스: {e}")
 
-    # [3차 시도] Yande.re API
-    yandere_url = f"https://yande.re/post.json?tags={zzz_tag}&limit=50&page={random_page}"
     try:
+        yandere_url = f"https://yande.re/post.json?tags={zzz_tag}&limit=50&page={random_page}"
         req = urllib.request.Request(yandere_url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
             res_text = response.read().decode("utf-8")
@@ -316,9 +293,27 @@ def fetch_random_zzz_image():
 
     return False, "❌ 젠레스 존 제로 이미지를 불러오지 못했어!", None
 
-# ---------------------------------------------------------
-# 5. 디스코드 이벤트 및 명령어
-# ---------------------------------------------------------
+@bot.command(name="입장")
+async def join_voice(ctx):
+    if ctx.author.voice:
+        channel = ctx.author.voice.channel
+        if ctx.voice_client is not None:
+            await ctx.voice_client.move_to(channel)
+            await ctx.send(f"🔊 **{channel.name}** 채널로 이동했어!")
+        else:
+            await channel.connect(reconnect=True)
+            await ctx.send(f"🔊 **{channel.name}** 음성 채널에 들어왔어! `!퇴장` 명령어를 치기 전까지 계속 남아있을게~")
+    else:
+        await ctx.send("❌ 먼저 음성 채널에 들어가 있어야 날 부를 수 있어!")
+
+@bot.command(name="퇴장")
+async def leave_voice(ctx):
+    if ctx.voice_client:
+        await ctx.voice_client.disconnect()
+        await ctx.send("👋 음성 채널에서 나왔어!")
+    else:
+        await ctx.send("❌ 나 아직 어떤 음성 채널에도 들어가 있지 않아!")
+
 @bot.event
 async def on_ready():
     print(f"🤖 봇 로그인 성공: {bot.user.name}")
@@ -330,7 +325,6 @@ async def on_ready():
     except Exception as e:
         print(f"❌ 슬래시 명령어 동기화 실패: {e}")
 
-# 슬래시 명령어 (/목록)
 @bot.tree.command(name="목록", description="세팅 정보가 등록된 전체 캐릭터 목록을 확인해!")
 async def list_slash(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -351,7 +345,6 @@ async def list_slash(interaction: discord.Interaction):
     embed.set_footer(text=f"총 {len(char_list)}명의 캐릭터가 등록되어 있어!")
     await interaction.followup.send(embed=embed)
 
-# 슬래시 명령어 (/세팅 [캐릭터])
 @bot.tree.command(name="세팅", description="젠존제 캐릭터 세팅 정보를 검색해!")
 @app_commands.describe(캐릭터="검색할 캐릭터 이름을 입력해줘 (선택 사항)")
 async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None):
@@ -393,7 +386,6 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
     except Exception as e:
         await interaction.followup.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
 
-# 슬래시 명령어 (/사진) - 파라미터 없이 랜덤 발송
 @bot.tree.command(name="사진", description="젠레스 존 제로 일러스트를 랜덤하게 가져와!")
 async def photo_slash(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -404,9 +396,6 @@ async def photo_slash(interaction: discord.Interaction):
     else:
         await interaction.followup.send(content=res_embed)
 
-# ---------------------------------------------------------
-# 봇 실행
-# ---------------------------------------------------------
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
 bot.run(TOKEN)
