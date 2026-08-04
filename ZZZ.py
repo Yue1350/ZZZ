@@ -2,7 +2,7 @@ import os, io, json, ssl, urllib.request, discord, urllib.parse, urllib.error, r
 from discord.ext import commands
 from discord import app_commands
 from keep_alive import keep_alive
-from pixivpy3 import AppPixivAPI
+from pixivpy3 import AppPixivAPI, PixivError
 
 keep_alive()
 
@@ -264,108 +264,95 @@ def load_char_english():
 
 
 # ---------------------------------------------------------
-# 4. 픽시브 전용 일러스트 검색 로직
+# 4. PixivPy 공식 라이브러리 기반 이미지 검색 함수
 # ---------------------------------------------------------
 def fetch_pixiv_image(character_query: str):
-    try:
-        clean_query = character_query.strip().replace(" ", "").lower()
-        char_tag_map = load_char_english()
-
-        # 1. 캐릭터 영문 태그 변환
-        if clean_query in char_tag_map:
-            tag = char_tag_map[clean_query]
-        else:
-            tag = character_query.strip().replace(" ", "_").lower()
-
-        # Danbooru API를 활용해 픽시브 원본 일러스트만 필터링 (pixiv 태그 + rating:g)
-        full_tags = f"{tag} zenless_zone_zero rating:g"
-        encoded_tags = urllib.parse.quote(full_tags)
-
-        search_url = (
-            f"https://danbooru.donmai.us/posts.json?limit=50&tags={encoded_tags}"
+    refresh_token = os.environ.get("PIXIV_REFRESH_TOKEN")
+    if not refresh_token:
+        return (
+            False,
+            "❌ `PIXIV_REFRESH_TOKEN` 환경 변수가 설정되어 있지 않아!",
+            None,
+            None,
         )
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        req = urllib.request.Request(search_url, headers=headers)
-        context = ssl._create_unverified_context()
+    clean_query = character_query.strip().replace(" ", "").lower()
+    char_tag_map = load_char_english()
 
-        data = []
-        try:
-            with urllib.request.urlopen(req, context=context) as response:
-                res_text = response.read().decode("utf-8").strip()
-                if res_text:
-                    data = json.loads(res_text)
-        except Exception as e:
-            print(f"1차 검색 오류: {e}")
+    # 영문 매핑명이 있으면 한글과 함께 검색 (결과 확률 증가)
+    if clean_query in char_tag_map:
+        eng_tag = char_tag_map[clean_query]
+        search_word = f"{character_query} {eng_tag} 젠레스 존 제로"
+    else:
+        search_word = f"{character_query} 젠레스 존 제로"
 
-        # 2. 젠존제 태그 검색 결과가 없으면 캐릭터 단독 검색
-        if not data:
-            fallback_tags = urllib.parse.quote(f"{tag} rating:g")
-            fallback_url = f"https://danbooru.donmai.us/posts.json?limit=50&tags={fallback_tags}"
-            req_fb = urllib.request.Request(fallback_url, headers=headers)
+    try:
+        # Pixiv API 객체 생성 및 인증
+        aapi = AppPixivAPI()
+        aapi.auth(refresh_token=refresh_token)
 
-            try:
-                with urllib.request.urlopen(
-                    req_fb, context=context
-                ) as resp_fb:
-                    res_text_fb = resp_fb.read().decode("utf-8").strip()
-                    if res_text_fb:
-                        data = json.loads(res_text_fb)
-            except Exception as e:
-                print(f"2차 검색 오류: {e}")
+        # 픽시브 일러스트 검색 (태그 부분 일치 검색)
+        json_result = aapi.search_illust(
+            search_word, search_target="partial_match_for_tags"
+        )
+        illusts = json_result.get("illusts", [])
 
-        if not data:
+        # 검색 결과가 없으면 캐릭터명 단독 검색으로 재시도
+        if not illusts:
+            json_result = aapi.search_illust(
+                character_query, search_target="partial_match_for_tags"
+            )
+            illusts = json_result.get("illusts", [])
+
+        if not illusts:
             return (
                 False,
-                f"❌ **{character_query}** (태그: `{tag}`) 관련 이미지를 찾지 못했어!",
+                f"❌ 픽시브에서 **{character_query}** 관련 이미지를 찾지 못했어!",
                 None,
                 None,
             )
 
-        # 3. 픽시브 출처(pixiv_id)가 포함된 일러스트 필터링
-        pixiv_posts = [
-            p
-            for p in data
-            if p.get("pixiv_id") or "pixiv.net" in str(p.get("source", ""))
-        ]
+        # 결과 중 랜덤 1개 선택
+        selected = random.choice(illusts)
+        image_url = selected.image_urls.large
+        title = selected.title
+        author = selected.user.name
+        illust_id = selected.id
 
-        # 픽시브 출처 게시글이 없으면 전체 결과 중 선택
-        selected = (
-            random.choice(pixiv_posts)
-            if pixiv_posts
-            else random.choice(data)
+        # ⚠️ 핵심: Pixiv 이미지는 'Referer' 헤더가 없으면 디스코드에서 엑박이 남!
+        # 따라서 이미지를 메모리(BytesIO)로 직접 다운로드하여 파일로 첨부함.
+        headers = {"Referer": "https://www.pixiv.net/"}
+        req = urllib.request.Request(image_url, headers=headers)
+
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            image_bytes = resp.read()
+
+        file = discord.File(
+            fp=io.BytesIO(image_bytes), filename=f"pixiv_{illust_id}.png"
         )
-
-        image_url = selected.get("file_url") or selected.get("large_file_url")
-        pixiv_id = selected.get("pixiv_id")
-
-        # 픽시브 링크 생성
-        if pixiv_id:
-            pixiv_url = f"https://www.pixiv.net/artworks/{pixiv_id}"
-        else:
-            pixiv_url = selected.get("source") or "https://www.pixiv.net"
 
         embed = discord.Embed(
-            title=f"🎨 {character_query} 픽시브 일러스트",
-            url=pixiv_url,
+            title=f"🎨 {title}",
+            url=f"https://www.pixiv.net/artworks/{illust_id}",
             color=0x0096FA,
         )
+        embed.add_field(name="작가", value=author, inline=True)
+        embed.set_image(url=f"attachment://pixiv_{illust_id}.png")
+        embed.set_footer(text="Pixiv API Search")
 
-        if image_url:
-            embed.set_image(url=image_url)
+        return True, embed, file, None
 
-        embed.set_footer(
-            text=f"Pixiv Artwork • Tag: {tag}",
-            icon_url="https://www.pixiv.net/favicon.ico",
+    except PixivError as pe:
+        print(f"Pixiv API 인증/요청 에러: {pe}")
+        return (
+            False,
+            f"⚠️ Pixiv API 연동 중 오류가 발생했어 (토큰 만료 또는 서버 차단): {pe}",
+            None,
+            None,
         )
-
-        return True, embed, None, None
-
     except Exception as e:
-        print(f"이미지 연동 오류: {e}")
-        return False, f"⚠️ 이미지를 가져오는 중 오류가 발생했어: {e}", None, None
+        print(f"이미지 다운로드 및 처리 오류: {e}")
+        return False, f"⚠️ 이미지를 처리하는 중 오류가 발생했어: {e}", None, None
         
 # ---------------------------------------------------------
 # 5. 디스코드 이벤트 및 명령어
@@ -403,26 +390,6 @@ async def list_slash(interaction: discord.Interaction):
     )
     embed.set_footer(text=f"총 {len(char_list)}명의 캐릭터가 등록되어 있어!")
     await interaction.followup.send(embed=embed)
-
-# 일반 명령어 (!목록)
-@bot.command(name="목록")
-async def list_prefix(ctx):
-    df = load_data()
-    
-    if df.empty or "캐릭명" not in df.columns:
-        await ctx.send("❌ 등록된 캐릭터 데이터를 불러올 수 없어!")
-        return
-
-    char_list = sorted(df["캐릭명"].unique().tolist())
-    text_list = "\n".join([f"• {name}" for name in char_list])
-
-    embed = discord.Embed(
-        title="📜 등록된 캐릭터 목록",
-        description=text_list,
-        color=0x3498db
-    )
-    embed.set_footer(text=f"총 {len(char_list)}명의 캐릭터가 등록되어 있어!")
-    await ctx.send(embed=embed)
 
 # 슬래시 명령어 (/세팅 [캐릭터])
 @bot.tree.command(name="세팅", description="젠존제 캐릭터 세팅 정보를 검색해!")
@@ -466,63 +433,15 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
     except Exception as e:
         await interaction.followup.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
 
-# 일반 명령어 (!세팅 [캐릭터])
-@bot.command(name="세팅")
-async def setting_prefix(ctx, *, 캐릭터: str = None):
-    try:
-        df = load_data()
-        
-        if df.empty or "캐릭명" not in df.columns:
-            await ctx.send("❌ 캐릭터 데이터를 로드하지 못했어!")
-            return
-
-        if 캐릭터:
-            search_name = 캐릭터.replace(" ", "").lower()
-            
-            if search_name == "배연우":
-                await ctx.send(f"{ctx.author.mention} 너 배연우")
-                return
-
-            if search_name == "베리나":
-                images = load_char_images()
-                img_url = images.get("베리나", "https://i.namu.wiki/i/eACVAos4WR6IB2Y1AlVn8qXnKlzxYWTsR6AULHvS9w-bbhphy1X4_iszgM8zdCRhSA0zfvvZpqNRIluNxNauxw.webp")
-                await ctx.send(f"{ctx.author.mention} 너 미래 남편\n{img_url}")
-                return
-
-            matched = df[df["캐릭명"].astype(str).str.replace(" ", "").str.lower().str.contains(search_name, na=False)]
-
-            if matched.empty:
-                await ctx.send(f"❌ **{캐릭터}** 캐릭터 정보를 찾을 수 없어!")
-                return
-
-            row = matched.iloc[0]
-            c_name, embed = create_setting_embed(row)
-            await ctx.send(content=f"**{c_name}** 세팅 정보를 가져왔어!", embed=embed)
-        else:
-            view = CategoryView(df)
-            await ctx.send("원하는 카테고리를 아래 드롭다운에서 골라줘!", view=view)
-
-    except Exception as e:
-        await ctx.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}")
-
 # 슬래시 명령어 (/사진 [캐릭터])
-@bot.tree.command(
-    name="사진",
-    description="픽시브/Safebooru에서 캐릭터의 일러스트를 랜덤으로 검색해서 가져와!",
-)
-@app_commands.describe(캐릭터="검색할 캐릭터 이름을 입력해줘")
+@bot.tree.command(name="사진", description="픽시브에서 일러스트를 가져와!")
 async def photo_slash(interaction: discord.Interaction, 캐릭터: str):
     await interaction.response.defer()
     success, res_embed, res_file, _ = fetch_pixiv_image(캐릭터)
 
     if success:
-        # res_file이 있을 때만 file 매개변수 전달
-        if res_file:
-            await interaction.followup.send(embed=res_embed, file=res_file)
-        else:
-            await interaction.followup.send(embed=res_embed)
+        await interaction.followup.send(embed=res_embed, file=res_file)
     else:
-        # 실패 시 에러 메시지(문자열) 전송
         await interaction.followup.send(content=res_embed)
 
 # ---------------------------------------------------------
