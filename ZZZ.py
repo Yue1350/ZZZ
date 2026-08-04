@@ -246,7 +246,7 @@ class CharacterSelectView(discord.ui.View):
         self.add_item(CharacterSelect(matched_df))
 
 # ---------------------------------------------------------
-# 4. 젠레스 존 제로 전용 렌덤 일러스트 가져오기 함수
+# 4. 젠레스 존 제로 전용 랜덤 일러스트 가져오기 함수
 # ---------------------------------------------------------
 def fetch_random_zzz_image():
     zzz_tag = urllib.parse.quote("zenless_zone_zero")
@@ -267,17 +267,9 @@ def fetch_random_zzz_image():
             if valid_posts:
                 selected = random.choice(valid_posts)
                 image_url = selected.get("large_file_url") or selected.get("file_url")
-                post_id = selected.get("id")
-                artist_tag = selected.get("tag_string_artist", "Unknown")
 
-                embed = discord.Embed(
-                    title="",
-                    url=f"https://danbooru.donmai.us/posts/{post_id}",
-                    color=0x0096FA
-                )
-                embed.add_field(name="작가", value=artist_tag.replace("_", " "), inline=True)
+                embed = discord.Embed(color=0x0096FA)
                 embed.set_image(url=image_url)
-                embed.set_footer(text="Danbooru Search")
                 return True, embed, None
     except Exception as e:
         print(f"Danbooru 패스: {e}")
@@ -294,15 +286,9 @@ def fetch_random_zzz_image():
                 if posts:
                     selected = random.choice(posts)
                     image_url = selected.get("file_url")
-                    post_id = selected.get("id")
 
-                    embed = discord.Embed(
-                        title="",
-                        url=f"https://gelbooru.com/index.php?page=post&s=view&id={post_id}",
-                        color=0x0096FA
-                    )
+                    embed = discord.Embed(color=0x0096FA)
                     embed.set_image(url=image_url)
-                    embed.set_footer(text="Gelbooru Search")
                     return True, embed, None
     except Exception as e:
         print(f"Gelbooru 패스: {e}")
@@ -321,15 +307,9 @@ def fetch_random_zzz_image():
                 if target_posts:
                     selected = random.choice(target_posts)
                     image_url = selected.get("sample_url") or selected.get("file_url")
-                    post_id = selected.get("id")
 
-                    embed = discord.Embed(
-                        title="",
-                        url=f"https://yande.re/post/show/{post_id}",
-                        color=0x0096FA
-                    )
+                    embed = discord.Embed(color=0x0096FA)
                     embed.set_image(url=image_url)
-                    embed.set_footer(text="Yande.re Search")
                     return True, embed, None
     except Exception as e:
         print(f"Yande.re 패스: {e}")
