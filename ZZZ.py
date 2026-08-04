@@ -262,22 +262,26 @@ def load_char_english():
     return {}
 
 # ---------------------------------------------------------
-# 4. 3중 안전 일러스트 검색 함수 (Danbooru -> Gelbooru -> Yande.re)
+# 4. 젠레스 존 제로 전용 3중 일러스트 검색 함수
 # ---------------------------------------------------------
 def fetch_character_image(character_query: str):
     clean_query = character_query.strip().replace(" ", "_").lower()
     char_tag_map = load_char_english()
 
+    # char_english.json 매핑명이 있으면 영문 태그 사용
     if clean_query in char_tag_map:
         search_tag = char_tag_map[clean_query].replace(" ", "_")
     else:
         search_tag = clean_query
 
     encoded_tag = urllib.parse.quote(search_tag)
+    # 젠레스 존 제로 전용 태그 (ZZZ)
+    zzz_tag = urllib.parse.quote("zenless_zone_zero")
     
-    # [1차 시도] Danbooru API
-    danbooru_url = f"https://danbooru.donmai.us/posts.json?tags={encoded_tag}+zenless_zone_zero+rating:g&limit=25"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+    # [1차 시도] Danbooru (ZZZ 필수)
+    danbooru_url = f"https://danbooru.donmai.us/posts.json?tags={encoded_tag}+{zzz_tag}+rating:g&limit=25"
 
     try:
         req = urllib.request.Request(danbooru_url, headers=headers)
@@ -292,7 +296,7 @@ def fetch_character_image(character_query: str):
 
             if image_url:
                 embed = discord.Embed(
-                    title=f"🎨 {character_query} 일러스트",
+                    title=f"🎨 {character_query} (젠존제)",
                     url=f"https://danbooru.donmai.us/posts/{post_id}",
                     color=0x0096FA
                 )
@@ -303,8 +307,8 @@ def fetch_character_image(character_query: str):
     except Exception as e:
         print(f"Danbooru 패스: {e}")
 
-    # [2차 시도] Gelbooru API (오픈 API, 차단 없음)
-    gelbooru_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&tags={encoded_tag}+rating:general&limit=25"
+    # [2차 시도] Gelbooru (ZZZ 필수 + rating:general)
+    gelbooru_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&tags={encoded_tag}+{zzz_tag}+rating:general&limit=25"
     try:
         req = urllib.request.Request(gelbooru_url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
@@ -318,7 +322,7 @@ def fetch_character_image(character_query: str):
                     post_id = selected.get("id")
 
                     embed = discord.Embed(
-                        title=f"🎨 {character_query} 일러스트",
+                        title=f"🎨 {character_query} (젠존제)",
                         url=f"https://gelbooru.com/index.php?page=post&s=view&id={post_id}",
                         color=0x0096FA
                     )
@@ -328,15 +332,14 @@ def fetch_character_image(character_query: str):
     except Exception as e:
         print(f"Gelbooru 패스: {e}")
 
-    # [3차 시도] Yande.re API (오픈 API, 차단 없음)
-    yandere_url = f"https://yande.re/post.json?tags={encoded_tag}&limit=25"
+    # [3차 시도] Yande.re (ZZZ 필수)
+    yandere_url = f"https://yande.re/post.json?tags={encoded_tag}+{zzz_tag}&limit=25"
     try:
         req = urllib.request.Request(yandere_url, headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
             res_text = response.read().decode("utf-8")
             if res_text.strip().startswith("["):
                 yan_data = json.loads(res_text)
-                # 안전 등급(rating == 's') 필터링
                 safe_posts = [p for p in yan_data if p.get("rating") == "s"]
                 target_posts = safe_posts if safe_posts else yan_data
                 
@@ -344,21 +347,19 @@ def fetch_character_image(character_query: str):
                     selected = random.choice(target_posts)
                     image_url = selected.get("sample_url") or selected.get("file_url")
                     post_id = selected.get("id")
-                    author = selected.get("author", "Unknown")
 
                     embed = discord.Embed(
-                        title=f"🎨 {character_query} 일러스트",
+                        title=f"🎨 {character_query} (젠존제)",
                         url=f"https://yande.re/post/show/{post_id}",
                         color=0x0096FA
                     )
-                    embed.add_field(name="올린이", value=author, inline=True)
                     embed.set_image(url=image_url)
                     embed.set_footer(text="Yande.re Search")
                     return True, embed, None
     except Exception as e:
         print(f"Yande.re 패스: {e}")
 
-    return False, f"❌ **{character_query}** 관련 이미지를 찾지 못했어!", None
+    return False, f"❌ **{character_query}** 관련 젠레스 존 제로 이미지를 찾지 못했어!", None
 
 # ---------------------------------------------------------
 # 5. 디스코드 이벤트 및 명령어
