@@ -1,7 +1,8 @@
-import os, io, json, ssl, urllib.request, discord, pandas as pd
+import os, io, json, ssl, urllib.request, discord, random, pandas as pd
 from discord.ext import commands
 from discord import app_commands
 from keep_alive import keep_alive
+from pixivpy3 import AppPixivAPI
 
 keep_alive()
 
@@ -115,7 +116,7 @@ def load_data():
     final_df = pd.DataFrame(processed_rows)
     print(f"✅ [디버그] 파싱 성공! 총 {len(final_df)}명의 캐릭터가 정상 로드됐어!")
     return final_df
-    
+
 # ---------------------------------------------------------
 # 2. 임베드 생성 함수
 # ---------------------------------------------------------
@@ -246,7 +247,63 @@ class CharacterSelectView(discord.ui.View):
         self.add_item(CharacterSelect(matched_df))
 
 # ---------------------------------------------------------
-# 4. 디스코드 이벤트 및 명령어
+# 4. 픽시브 크롤링/검색 공통 로직 함수
+# ---------------------------------------------------------
+def fetch_pixiv_image(character_query: str):
+    refresh_token = os.environ.get("PIXIV_REFRESH_TOKEN")
+    if not refresh_token:
+        return False, "❌ `PIXIV_REFRESH_TOKEN` 환경 변수가 설정되어 있지 않아!", None, None
+
+    try:
+        aapi = AppPixivAPI()
+        aapi.auth(refresh_token=refresh_token)
+
+        # 젠존제 관련 태그 결합 검색
+        search_query = f"{character_query} (젠레스 존 제로 OR ZZZ)"
+        json_result = aapi.search_illust(search_query, search_target='partial_match_for_tags')
+
+        illusts = json_result.illusts
+        if not illusts:
+            # 기본 검색어로 재시도
+            json_result = aapi.search_illust(character_query, search_target='partial_match_for_tags')
+            illusts = json_result.illusts
+
+        if not illusts:
+            return False, f"❌ 픽시브에서 **{character_query}** 관련 이미지를 찾지 못했어!", None, None
+
+        # 일러스트 랜덤 선택
+        selected_illust = random.choice(illusts)
+        image_url = selected_illust.image_urls.large
+        title = selected_illust.title
+        author = selected_illust.user.name
+        illust_id = selected_illust.id
+
+        # Referer 헤더 우회 설정 및 이미지 다운로드
+        headers = {'Referer': 'https://www.pixiv.net/'}
+        req = urllib.request.Request(image_url, headers=headers)
+        
+        with urllib.request.urlopen(req) as resp:
+            image_bytes = resp.read()
+
+        file = discord.File(fp=io.BytesIO(image_bytes), filename=f"pixiv_{illust_id}.png")
+
+        embed = discord.Embed(
+            title=f"🎨 {title}",
+            url=f"https://www.pixiv.net/artworks/{illust_id}",
+            color=0x0096fa
+        )
+        embed.add_field(name="작가", value=author, inline=True)
+        embed.set_image(url=f"attachment://pixiv_{illust_id}.png")
+        embed.set_footer(text="Pixiv Image Search")
+
+        return True, embed, file, None
+
+    except Exception as e:
+        print(f"픽시브 연동 오류: {e}")
+        return False, f"⚠️ 이미지를 가져오는 중 오류가 발생했어: {e}", None, None
+
+# ---------------------------------------------------------
+# 5. 디스코드 이벤트 및 명령어
 # ---------------------------------------------------------
 @bot.event
 async def on_ready():
@@ -382,6 +439,29 @@ async def setting_prefix(ctx, *, 캐릭터: str = None):
 
     except Exception as e:
         await ctx.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}")
+
+# 슬래시 명령어 (/사진 [캐릭터])
+@bot.tree.command(name="사진", description="픽시브에서 캐릭터의 일러스트를 랜덤으로 검색해서 가져와!")
+@app_commands.describe(캐릭터="검색할 캐릭터 이름을 입력해줘")
+async def photo_slash(interaction: discord.Interaction, 캐릭터: str):
+    await interaction.response.defer()
+    success, res_embed, res_file, _ = fetch_pixiv_image(캐릭터)
+    
+    if success:
+        await interaction.followup.send(embed=res_embed, file=res_file)
+    else:
+        await interaction.followup.send(content=res_embed)
+
+# 일반 명령어 (!사진 [캐릭터])
+@bot.command(name="사진")
+async def photo_prefix(ctx, *, 캐릭터: str):
+    async with ctx.typing():
+        success, res_embed, res_file, _ = fetch_pixiv_image(캐릭터)
+        
+        if success:
+            await ctx.send(embed=res_embed, file=res_file)
+        else:
+            await ctx.send(content=res_embed)
 
 # ---------------------------------------------------------
 # 봇 실행
