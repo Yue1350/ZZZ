@@ -264,7 +264,7 @@ def load_char_english():
 
 
 # ---------------------------------------------------------
-# 4. Safebooru 이미지 검색 공통 로직 함수 (JSON 파싱 에러 방지 처리)
+# 4. Gelbooru 이미지 검색 공통 로직 함수 (젠존제 태그 조합)
 # ---------------------------------------------------------
 def fetch_pixiv_image(character_query: str):
     try:
@@ -273,17 +273,18 @@ def fetch_pixiv_image(character_query: str):
         # JSON 데이터 로드
         char_tag_map = load_char_english()
 
-        # 1. 한글 매핑 사전에 있는지 확인
+        # 1. 한글 매핑 사전에 있는지 확인 -> 있으면 영문 태그 사용, 없으면 입력값 사용
         if clean_query in char_tag_map:
             tag = char_tag_map[clean_query]
         else:
             tag = character_query.strip().replace(" ", "_").lower()
 
-        # URL 인코딩 처리
-        encoded_tag = urllib.parse.quote(tag)
+        # 캐릭터 태그와 젠레스 존 제로 태그 조합
+        full_tags = f"{tag} zenless_zone_zero rating:general"
+        encoded_tags = urllib.parse.quote(full_tags)
 
-        # Safebooru 검색 URL 생성
-        search_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={encoded_tag}+zenless_zone_zero"
+        # Gelbooru API URL 생성
+        search_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={encoded_tags}"
 
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         req = urllib.request.Request(search_url, headers=headers)
@@ -292,22 +293,26 @@ def fetch_pixiv_image(character_query: str):
         data = []
         with urllib.request.urlopen(req, context=context) as response:
             res_text = response.read().decode("utf-8").strip()
-            # 응답 내용이 존재하는 경우에만 JSON 파싱
             if res_text:
                 try:
-                    data = json.loads(res_text)
+                    res_json = json.loads(res_text)
+                    # Gelbooru는 {"post": [...]} 형태로 응답
+                    data = res_json.get("post", [])
                 except json.JSONDecodeError:
                     data = []
 
         # 2. 젠존제 태그 검색 결과가 없으면 캐릭터 태그 단독으로 재시도
         if not data:
-            fallback_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={encoded_tag}"
+            fallback_tags = urllib.parse.quote(f"{tag} rating:general")
+            fallback_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=50&tags={fallback_tags}"
             req_fb = urllib.request.Request(fallback_url, headers=headers)
+
             with urllib.request.urlopen(req_fb, context=context) as response_fb:
                 res_text_fb = response_fb.read().decode("utf-8").strip()
                 if res_text_fb:
                     try:
-                        data = json.loads(res_text_fb)
+                        res_json_fb = json.loads(res_text_fb)
+                        data = res_json_fb.get("post", [])
                     except json.JSONDecodeError:
                         data = []
 
@@ -321,8 +326,9 @@ def fetch_pixiv_image(character_query: str):
 
         # 3. 검색 결과 중 랜덤 1개 선택
         selected = random.choice(data)
-        image_url = f"https://safebooru.org/images/{selected['directory']}/{selected['image']}"
-        post_url = f"https://safebooru.org/index.php?page=post&s=view&id={selected['id']}"
+        image_url = selected.get("file_url")
+        post_id = selected.get("id")
+        post_url = f"https://gelbooru.com/index.php?page=post&s=view&id={post_id}"
 
         embed = discord.Embed(
             title=f"🎨 {character_query} 일러스트",
@@ -330,7 +336,7 @@ def fetch_pixiv_image(character_query: str):
             color=0x0096FA,
         )
         embed.set_image(url=image_url)
-        embed.set_footer(text=f"Safebooru Search • Tag: {tag}")
+        embed.set_footer(text=f"Gelbooru Search • Tag: {tag}")
 
         return True, embed, None, None
 
