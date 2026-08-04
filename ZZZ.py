@@ -380,9 +380,7 @@ async def setting_prefix(ctx, *, 캐릭터: str = None):
     except Exception as e:
         await ctx.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}")
 
-# ---------------------------------------------------------
 # 봇 실행
-# ---------------------------------------------------------
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
 bot.run(TOKEN)
