@@ -9,7 +9,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.voice_states = True
 
-bot = super().__init__(command_prefix="!", help_command=None, intents=intents)
+super().__init__(command_prefix="!", help_command=None, intents=intents)
 
 def load_char_images():
     if os.path.exists("char_images.json"):
