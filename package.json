@@ -3,17 +3,16 @@
   "version": "1.0.0",
   "description": "Zenless Zone Zero Character Setting Discord Bot",
   "main": "index.js",
+  "private": true,
+  "license": "MIT",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@discordjs/voice": "^0.18.0",
     "axios": "^1.7.9",
     "discord.js": "^14.18.0",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "papaparse": "^5.5.2",
-    "sodium-native": "^4.3.1"
+    "papaparse": "^5.5.2"
   },
   "engines": {
     "node": ">=18.0.0"
