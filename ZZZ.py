@@ -322,6 +322,6 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
     except Exception as e:
         await interaction.followup.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
 
-TOKEN = os.environ.get("DISCORD_TOKEN")
+TOKEN = 
 
-bot.run(TOKEN)
+bot.run(os.environ.get("DISCORD_TOKEN"))
