@@ -12,16 +12,26 @@ const {
 const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 const axios = require('axios');
 const Papa = require('papaparse');
-const express = require('express');
 
-// Keep Alive 서브 서버 (keep_alive 기능)
-const app = express();
-app.get('/', (req, res) => res.send('Bot is alive!'));
-app.listen(3000, () => console.log('Keep-alive server running on port 3000'));
+// ==========================================
+// 1. Keep Alive 웹서버 구현 (http 모듈)
+// ==========================================
+const PORT = process.env.PORT || 8080;
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end('Bot is running!');
+});
 
-// 클라이언트 생성
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🌐 웹 서버가 포트 ${PORT}번에서 실행 중이야!`);
+});
+
+// ==========================================
+// 2. 디스코드 클라이언트 설정
+// ==========================================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
