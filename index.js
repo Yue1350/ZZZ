@@ -19,7 +19,7 @@ const Papa = require('papaparse');
 // ==========================================
 // 1. Keep Alive 웹서버 구현 (http 모듈)
 // ==========================================
-const PORT = process.env.PORT || 8080;
+const PORT = 8080;
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('Bot is running!');
