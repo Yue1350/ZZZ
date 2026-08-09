@@ -1,4 +1,4 @@
-import os, io, json, ssl, urllib.request, discord, urllib.parse, urllib.error, random, pandas as pd
+import os, io, json, ssl, urllib.request, urllib.parse, urllib.error, pandas as pd
 from discord.ext import commands
 from discord import app_commands
 from keep_alive import keep_alive
@@ -229,70 +229,6 @@ class CharacterSelectView(discord.ui.View):
         super().__init__(timeout=60)
         self.add_item(CharacterSelect(matched_df))
 
-def fetch_random_zzz_image():
-    zzz_tag = urllib.parse.quote("zenless_zone_zero")
-    random_page = random.randint(1, 5)
-    
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-
-    try:
-        danbooru_url = f"https://danbooru.donmai.us/posts.json?tags={zzz_tag}+rating:g&limit=50&page={random_page}"
-        req = urllib.request.Request(danbooru_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode("utf-8"))
-
-        if data and isinstance(data, list):
-            valid_posts = [p for p in data if p.get("large_file_url") or p.get("file_url")]
-            if valid_posts:
-                selected = random.choice(valid_posts)
-                image_url = selected.get("large_file_url") or selected.get("file_url")
-
-                embed = discord.Embed(color=0x0096FA)
-                embed.set_image(url=image_url)
-                return True, embed, None
-    except Exception as e:
-        print(f"Danbooru 패스: {e}")
-
-    try:
-        gelbooru_url = f"https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&tags={zzz_tag}+rating:general&limit=50&pid={random_page}"
-        req = urllib.request.Request(gelbooru_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            res_text = response.read().decode("utf-8")
-            if res_text.strip().startswith("{"):
-                gel_data = json.loads(res_text)
-                posts = gel_data.get("post", [])
-                if posts:
-                    selected = random.choice(posts)
-                    image_url = selected.get("file_url")
-
-                    embed = discord.Embed(color=0x0096FA)
-                    embed.set_image(url=image_url)
-                    return True, embed, None
-    except Exception as e:
-        print(f"Gelbooru 패스: {e}")
-
-    try:
-        yandere_url = f"https://yande.re/post.json?tags={zzz_tag}&limit=50&page={random_page}"
-        req = urllib.request.Request(yandere_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            res_text = response.read().decode("utf-8")
-            if res_text.strip().startswith("["):
-                yan_data = json.loads(res_text)
-                safe_posts = [p for p in yan_data if p.get("rating") == "s"]
-                target_posts = safe_posts if safe_posts else yan_data
-                
-                if target_posts:
-                    selected = random.choice(target_posts)
-                    image_url = selected.get("sample_url") or selected.get("file_url")
-
-                    embed = discord.Embed(color=0x0096FA)
-                    embed.set_image(url=image_url)
-                    return True, embed, None
-    except Exception as e:
-        print(f"Yande.re 패스: {e}")
-
-    return False, "❌ 젠레스 존 제로 이미지를 불러오지 못했어!", None
-
 @bot.command(name="입장")
 async def join_voice(ctx):
     if ctx.author.voice:
@@ -385,16 +321,6 @@ async def setting_slash(interaction: discord.Interaction, 캐릭터: str = None)
 
     except Exception as e:
         await interaction.followup.send(f"⚠️ 데이터를 불러오는 중 오류가 발생했어: {e}", ephemeral=True)
-
-@bot.tree.command(name="사진", description="젠레스 존 제로 일러스트를 랜덤하게 가져와!")
-async def photo_slash(interaction: discord.Interaction):
-    await interaction.response.defer()
-    success, res_embed, _ = fetch_random_zzz_image()
-
-    if success:
-        await interaction.followup.send(embed=res_embed)
-    else:
-        await interaction.followup.send(content=res_embed)
 
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
