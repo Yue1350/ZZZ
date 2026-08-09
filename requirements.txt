@@ -1,7 +1,0 @@
-discord.py
-pandas
-requests
-python-dotenv
-flask
-PyNaCl
-davey
