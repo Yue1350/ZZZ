@@ -16,7 +16,7 @@ const axios = require('axios');
 const Papa = require('papaparse');
 
 // ==========================================
-// 1. Keep Alive 웹서버 구현 (http 모듈)
+// 1. Keep Alive 웹서버 구현
 // ==========================================
 const PORT = process.env.PORT || 8080;
 const server = http.createServer((req, res) => {
@@ -39,7 +39,12 @@ const client = new Client({
   ]
 });
 
-// 캐릭터 이미지 로드 (data/char_images.json 경로)
+// 데이터 캐싱 변수
+let cachedData = null;
+let lastFetchTime = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5분 캐싱
+
+// 캐릭터 이미지 로드
 function loadCharImages() {
   const jsonPath = path.join(__dirname, 'data', 'char_images.json');
   
@@ -53,16 +58,19 @@ function loadCharImages() {
       }
       return result;
     } catch (e) {
-      console.log(`JSON 로드 중 오류 발생: ${e}`);
+      console.error(`❌ 이미지 JSON 로드 중 오류: ${e}`);
     }
-  } else {
-    console.log(`⚠️ 경로에 파일이 존재하지 않아: ${jsonPath}`);
   }
   return {};
 }
 
-// 구글 시트 데이터 로드 및 파싱
-async function loadData() {
+// 구글 시트 데이터 로드 (캐싱 적용)
+async function loadData(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && cachedData && (now - lastFetchTime < CACHE_DURATION)) {
+    return cachedData;
+  }
+
   const sheetId = '1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb';
   const gid = '2007866856';
   const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
@@ -122,10 +130,13 @@ async function loadData() {
       processedRows.push(rowData);
     }
 
+    cachedData = processedRows;
+    lastFetchTime = now;
+    console.log(`📊 구글 시트 데이터 갱신 완료! (총 ${processedRows.length}개 캐릭터)`);
     return processedRows;
   } catch (e) {
-    console.log(`❌ 구글 시트 로드 중 오류 발생: ${e}`);
-    return [];
+    console.error(`❌ 구글 시트 로드 중 오류: ${e}`);
+    return cachedData || [];
   }
 }
 
@@ -165,7 +176,9 @@ function createSettingEmbed(row) {
   return { charName, embed };
 }
 
-// 슬래시 명령어 등록 정의
+// ==========================================
+// 3. 슬래시 명령어 등록 정의
+// ==========================================
 const commands = [
   new SlashCommandBuilder()
     .setName('목록')
@@ -180,11 +193,15 @@ const commands = [
     )
 ].map(command => command.toJSON());
 
-// 봇 준비 이벤트
+// 봇 로그인 완료 이벤트
 client.once('ready', async () => {
   console.log(`🤖 봇 로그인 성공: ${client.user.tag}`);
   client.user.setActivity('에이전트 관리 중');
 
+  // 데이터 초기 로드
+  await loadData(true);
+
+  // 슬래시 명령어 동기화
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   try {
     await rest.put(
@@ -197,17 +214,13 @@ client.once('ready', async () => {
   }
 });
 
-// 텍스트 메시지 이벤트 (!help 무반응 처리)
+// 일반 메시지 이벤트 (!help 무반응 처리)
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
-
-  // !help를 쳐도 아무 반응도 하지 않도록 설정
-  if (message.content.trim() === '!help') {
-    return;
-  }
+  if (message.content.trim() === '!help') return;
 });
 
-// 슬래시 명령어 및 드롭다운 Interaction 처리
+// Interaction 처리 (슬래시 명령어 실행)
 client.on('interactionCreate', async interaction => {
   if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
@@ -279,6 +292,7 @@ client.on('interactionCreate', async interaction => {
     }
   }
 
+  // 드롭다운 처리
   if (interaction.isStringSelectMenu()) {
     try {
       await interaction.deferUpdate();
