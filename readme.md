@@ -15,8 +15,6 @@ Discord.js v14 기반으로 동작하는 **젠레스 존 제로(Zenless Zone Zer
   - `char_images.json` 파일과 연동하여 캐릭터 썸네일 이미지를 출력합니다.
 - **🎛️ 인터랙티브 드롭다운 메뉴**:
   - 캐릭터 이름을 직접 검색하지 않아도 전체, 진영별, 특성별, 포지션별 카테고리 메뉴를 통해 쉽게 탐색할 수 있습니다.
-- **🌐 Web Keep-Alive 서버**:
-  - Render 등 호스팅 환경을 위한 HTTP Keep-Alive 웹 서버가 내장되어 있습니다.
 
 ---
 
@@ -38,6 +36,5 @@ Discord.js v14 기반으로 동작하는 **젠레스 존 제로(Zenless Zone Zer
 ├── data/
 │   └── char_images.json      # 캐릭터별 썸네일 이미지 URL 매핑 파일
 ├── index.js                  # 봇 메인 로직 (Keep-Alive 서버, 구글 시트 파싱, 슬래시 명령어, 드롭다운 이벤트)
-├── .env                      # 환경 변수 설정 파일 (DISCORD_TOKEN 등)
 ├── package.json              # 프로젝트 의존성 라이브러리 목록
 └── README.md                 # 프로젝트 설명 문서
