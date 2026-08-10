@@ -1,37 +1,44 @@
-# 🎮 젠존제 세팅 정보 디스코드 봇 (ZZS Bot)
+# 🎵 태안 음악 봇 (Taean Music Bot)
 
-> **젠레스 존 제로(Zenless Zone Zero)** 에이전트들의 세팅 정보, 디스크 옵션, W-엔진 추천을
-> 구글 시트 기반으로 실시간 제공하는 디스코드 봇입니다.
+Discord.js v14 및 Lavalink client를 기반으로 동작하는 고성능 디스코드 음악 봇 프로젝트입니다.  
+전용 음악 채널을 통해 실시간 재생 상태 UI, 임베드 메시지 기반 UI 컨트롤, 대기열 관리 및 데이터베이스(MongoDB) 연동 기능을 제공합니다.
 
 ---
 
-## ✨ 주요 기능
+## 📌 주요 기능
 
-* **📊 구글 시트 연동**: 항상 최신 데이터로 업데이트되는 캐릭터 세팅 정보 파싱
-* **🔍 슬래시 명령어 (`/세팅`)**: 
-  * 캐릭터명을 직접 검색하여 빠르게 세팅 가이드 출력
-  * 카테고리(진영, 특성, 포지션)별 드롭다운 탐색 가능
-* **📜 전체 목록 조회 (`/목록`)**: 등록된 전체 캐릭터 리스트를 한눈에 확인
-* **🖼️ 캐릭터 이미지 매핑**: `data/char_images.json` 파일 기반 임베드 썸네일 지원
-  
+- **🎵 전용 음악 채널 시스템**: 명령어 및 전용 채널 내 메시지 입력만으로 음악을 검색하고 재생할 수 있습니다.
+- **🎛️ 실시간 인터랙티브 UI**:
+  - 재생 정보, 진척도(Progress Bar), 현재 볼륨, 반복 모드 등을 디스코드 임베드로 시각화합니다.
+  - 이전 곡, 일시정지/재생, 다음 곡, 반복 모드, 정지, 볼륨 조절, 대기열 초기화 버튼 제공.
+- **📜 대기열(Queue) 페이징 관리**: 대기열 곡 목록을 페이지별로 탐색할 수 있습니다.
+  - 정지(`⏹️`) 및 대기열 청소(`🗑️`) 버튼은 관리자 권한을 가진 사용자만 실행 가능합니다.
+- **💾 Mongoose (MongoDB) 연동**: 길드별 음악 전용 채널 설정 및 UI 메시지 ID 정보를 데이터베이스에 안전하게 저장/로드합니다.
+- **🌐 Web Keep-Alive 서버**: Render 등 클라우드 호스팅 환경을 고려한 Express 기반 포트 바인딩 및 Keep-Alive HTTP 서버 탑재.
+
 ---
 
 ## 🛠️ 기술 스택
 
-| 분류 | 기술 스택 |
-| --- | --- |
-| **Language** | Node.js (v18+) |
-| **Library** | `discord.js` v14, `@discordjs/voice` |
-| **Data Processing** | `axios`, `papaparse` |
-| **Server** | Node.js Built-in `http` Module |
+- **Runtime**: Node.js
+- **Framework & Libraries**:
+  - `discord.js` v14
+  - `lavalink-client`
+  - `mongoose` (MongoDB ORM)
+  - `express` & `http`
+  - `dotenv`
 
 ---
 
-## 📁 프로젝트 구조
+## 📂 프로젝트 구조
 
 ```text
-├── index.js                  # 메인 로직 및 디스코드 클라이언트 설정
-├── package.json              # 의존성 패키지 관리
-├── readme.md                 # 프로젝트 설명 및 사용법 문서
-└── data/
-    └── char_images.json      # 캐릭터별 이미지 URL 매핑 파일
+.
+├── assets/
+│   └── music_idle.png        # 봇 대기 상태 표시용 이미지
+├── cogs/
+│   └── music.js              # 음악 이벤트, 슬래시 명령어, 버튼 반응 및 재생 핸들러 로직
+├── .env                      # 환경 변수 설정 파일 (DISCORD_TOKEN, MONGODB_URI, LAVA_* 등)
+├── index.js                  # Express/KeepAlive 서버, DB 연결, Discord 클라이언트 및 Lavalink 초기화
+├── package.json              # 프로젝트 의존성 및 스크립트 정보
+└── README.md                 # 프로젝트 설명 문서
