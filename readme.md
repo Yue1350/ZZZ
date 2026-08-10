@@ -32,5 +32,6 @@
 ```text
 ├── index.js                  # 메인 로직 및 디스코드 클라이언트 설정
 ├── package.json              # 의존성 패키지 관리
+├── readme.md                 # 프로젝트 설명 및 사용법 문서
 └── data/
     └── char_images.json      # 캐릭터별 이미지 URL 매핑 파일
