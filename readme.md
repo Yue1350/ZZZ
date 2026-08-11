@@ -38,3 +38,9 @@ Discord.js v14 기반으로 동작하는 **젠레스 존 제로(Zenless Zone Zer
 ├── index.js                  # 봇 메인 로직 (Keep-Alive 서버, 구글 시트 파싱, 슬래시 명령어, 드롭다운 이벤트)
 ├── package.json              # 프로젝트 의존성 라이브러리 목록
 └── README.md                 # 프로젝트 설명 문서
+
+---
+
+# 출처
+https://zzz.akademiya.app/en/characters
+https://docs.google.com/spreadsheets/d/1C3ZpKCTQJXFwUBgZKZRdLOvGqDGlVijb/htmlview#gid=2007866856
